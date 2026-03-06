@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ventas Especiales · Copservir</title>
+<!-- Fonts & Icons -->
+
+<!-- ESTE ARCHIVO ES EL REPORTOR DE VENTAS ESPECIALES
+SE VISUALIZA LA TABLA Y DATOS DE LA CONSULTA SQL EJECUTADA EN LA BASE DE DATOS, CON UN DISEÑO MEJORADO Y MÁS INTERACTIVO. -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Inter', sans-serif;
+}
+
+body {
+    background: linear-gradient(145deg, #f8fffb 0%, #97ebc0d6 100%);
+    display: flex;
+}
+
+/* SIDEBAR */
+.sidebar {
+    width: 260px;
+    background: #ffffff;
+    height: 100vh;
+    padding: 32px 20px;
+    border-right: 1px solid rgba(0, 40, 20, 0.08);
+    box-shadow: 4px 0 20px rgba(0, 40, 20, 0.03);
+    position: sticky;
+    top: 0;
+}
+
+.sidebar h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 40px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #0a3b2e;
+}
+
+.sidebar h2 i {
+    color: #10b981;
+    font-size: 1.8rem;
+}
+
+.sidebar ul {
+    list-style: none;
+}
+
+.sidebar ul li {
+    padding: 14px 18px;
+    margin-bottom: 6px;
+    border-radius: 14px;
+    cursor: pointer;
+    color: #2c4a3e;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    transition: all 0.2s ease;
+}
+
+.sidebar ul li i {
+    width: 24px;
+    font-size: 1.25rem;
+    color: #5e8b7c;
+}
+
+.sidebar ul li.active,
+.sidebar ul li:hover {
+    background: #e2f3e9;
+    color: #0b614b;
+    transform: scale(1.02);
+    box-shadow: 0 6px 12px rgba(0, 60, 30, 0.08);
+}
+
+.sidebar ul li.active i,
+.sidebar ul li:hover i {
+    color: #0b7b5a;
+}
+
+.sidebar ul li a.nav-link{ color:inherit; text-decoration:none; display:flex; align-items:center; gap:14px }
+
+/* MAIN */
+.main {
+    flex: 1;
+    padding: 32px 36px;
+    overflow-x: auto;
+}
+
+.topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+}
+
+.filter-container {
+    display: flex;
+    justify-content: flex-start;
+    gap: 12px;
+    margin-bottom: 12px;
+    align-items: center;
+}
+
+.filter-container select {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #d1e8d9;
+    background: white;
+    font-size: 0.95rem;
+}
+
+.filters-left { display:flex; gap:12px; align-items:center }
+.filter-pill{ display:inline-flex; align-items:center; gap:8px; background:#ffffff; padding:6px 10px; border-radius:12px; border:1px solid #e6f3ea; box-shadow:0 4px 10px rgba(0,30,10,0.02) }
+.filter-icon{ color:#6fa889; font-size:0.95rem }
+.filter-select{ border:0; background:transparent; font-size:0.95rem; padding:4px 6px; min-width:120px }
+.filter-select:focus{ outline:none }
+
+.date-input{ border:0; background:transparent; font-size:0.95rem; padding:6px 8px; border-radius:8px }
+.date-input:focus{ outline:none; box-shadow: 0 6px 14px rgba(16,185,129,0.08); }
+
+.search-wrapper {
+    position: relative;
+    width: 300px;
+}
+
+.search-wrapper i {
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #8aa89c;
+    font-size: 1rem;
+    pointer-events: none;
+}
+
+.search {
+    width: 100%;
+    padding: 14px 20px 14px 46px;
+    border-radius: 40px;
+    border: 1px solid #cbdcd0;
+    background: white;
+    font-size: 0.95rem;
+    box-shadow: 0 4px 10px rgba(0, 30, 10, 0.02);
+    transition: 0.2s;
+}
+
+.search:focus {
+    outline: none;
+    border-color: #10b981;
+    box-shadow: 0 8px 18px rgba(16, 185, 129, 0.15);
+}
+
+/* BANNER */
+.banner {
+    background: linear-gradient(112deg, #e6edea 0%, #0d6b4a 100%);
+    border-radius: 32px;
+    padding: 40px 48px;
+    color: white;
+    margin-bottom: 40px;
+    box-shadow: 0 20px 30px -10px rgba(10, 70, 40, 0.3);
+    position: relative;
+    overflow: hidden;
+}
+
+.banner::after {
+    content: url("https://res.cloudinary.com/dz7okl1ko/image/upload/v1752180853/5134606975890468276-removebg-preview_iskqsd.png");
+    font-size: 180px;
+    position: absolute;
+    bottom: -40px;
+    right: 20px;
+    opacity: 0.1;
+    color: #bef5d5;
+    transform: rotate(15deg);
+    font-weight: 700;
+}
+
+.banner h1 {
+    font-size: 42px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+}
+
+.banner p {
+    font-size: 1.3rem;
+    font-weight: 400;
+    opacity: 0.9;
+    margin-top: 12px;
+}
+
+/* CARDS INTERACTIVAS */
+.cards {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 42px;
+    flex-wrap: wrap;
+}
+
+.card {
+    background: white;
+    flex: 1 1 200px;
+    padding: 26px 24px;
+    border-radius: 28px;
+    box-shadow: 0 8px 24px rgba(0, 45, 20, 0.06);
+    transition: all 0.25s ease;
+    border: 1px solid rgba(0, 60, 30, 0.04);
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    backdrop-filter: blur(2px);
+}
+
+.card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 22px 35px -10px #1f8b5e50;
+    border-color: #c5f0da;
+}
+
+.card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+}
+
+.card-header i {
+    font-size: 2.4rem;
+    color: #0c8f5e;
+    background: #def7e8;
+    padding: 14px;
+    border-radius: 22px;
+    transition: 0.2s;
+}
+
+.card:hover .card-header i {
+    background: #b0ebd0;
+    color: #056b41;
+}
+
+.badge-today {
+    background: #fee2e2;
+    color: #991b1b;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 5px 12px;
+    border-radius: 60px;
+    box-shadow: 0 2px 6px rgba(239, 68, 68, 0.1);
+}
+
+.card h3 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    color: #597a6b;
+    margin-bottom: 6px;
+}
+
+.card h2 {
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: #173b2d;
+    line-height: 1.2;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.card .trend {
+    font-size: 0.9rem;
+    font-weight: 600;
+    background: #e1f7ea;
+    padding: 4px 12px;
+    border-radius: 40px;
+    color: #0b714c;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 12px;
+}
+
+/* TABLA MEJORADA */
+.table-container {
+    background: white;
+    border-radius: 30px;
+    padding: 20px;
+    box-shadow: 0 25px 40px -18px #215d4040;
+    border: 1px solid rgba(70, 130, 100, 0.1);
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 8px;
+}
+
+thead tr {
+    background: transparent;
+}
+
+th {
+    text-align: left;
+    padding: 18px 16px 10px 16px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #3c6e59;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    border-bottom: 2px solid #d3eee0;
+}
+
+tbody tr {
+    background: #ffffff;
+    border-radius: 20px;
+    transition: all 0.15s;
+    box-shadow: 0 4px 10px rgba(0, 30, 0, 0.02);
+}
+
+tbody tr:hover {
+    background: #f8fffc;
+    box-shadow: 0 10px 22px -8px #9bc5b2;
+    transform: scale(1.002);
+}
+
+td {
+    padding: 16px;
+    font-size: 0.9rem;
+    color: #1f4034;
+    border: none;
+    background-clip: padding-box;
+}
+
+tbody tr td:first-child {
+    border-top-left-radius: 18px;
+    border-bottom-left-radius: 18px;
+    font-weight: 600;
+}
+
+tbody tr td:last-child {
+    border-top-right-radius: 18px;
+    border-bottom-right-radius: 18px;
+}
+
+/* Badges para estado y tipo */
+.status-badge {
+    background: #fef7da;
+    color: #9e7300;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 40px;
+    font-size: 0.8rem;
+    display: inline-block;
+    border: 1px solid #f5e2a9;
+}
+
+.cantidad-badge {
+    font-weight: 600;
+    background: #eefcf3;
+    padding: 3px 8px;
+    border-radius: 40px;
+    display: inline-block;
+    font-size: 0.85rem;
+}
+
+.action-icons i {
+    color: #709e8b;
+    margin: 0 8px 0 0;
+    font-size: 1.1rem;
+    transition: 0.1s;
+    cursor: pointer;
+}
+
+.action-icons i:hover {
+    color: #0d6747;
+    transform: scale(1.1);
+}
+
+/* Responsive */
+@media (max-width: 1000px) {
+    .sidebar { display: none; }
+    body { display: block; }
+    .main { padding: 20px; }
+}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+    <h2><img src="https://res.cloudinary.com/dz7okl1ko/image/upload/v1752180853/5134606975890468276-removebg-preview_iskqsd.png" alt="Logo Copservir"></h2> 
+    <ul>
+        <li class="active"><i class="fas fa-file-alt"></i> Reportes</li>
+    <li><a class="nav-link" href="/dashboard"><i class="fas fa-chart-pie"></i> Dashboard</a></li>
+        <li><i class="fas fa-users"></i> Clientes</li>
+        <li><i class="fas fa-store"></i> Puntos de Venta</li>
+    </ul>
+</div>
+
+<!-- MAIN CONTENT -->
+<div class="main">
+
+    <div class="topbar">
+        <div class="filters-left">
+            <div class="filter-pill">
+                <i class="fas fa-store filter-icon" aria-hidden="true"></i>
+                <select id="idcomercial-select" class="filter-select" aria-label="Filtrar por PDV">
+                    <option value="">Filtrar por PDV</option>
+                </select>
+            </div>
+            <div class="filter-pill">
+                <i class="fas fa-user filter-icon" aria-hidden="true"></i>
+                <select id="cliente-select" class="filter-select" aria-label="Filtrar por cliente">
+                    <option value="">Filtrar Clientes</option>
+                </select>
+            </div>
+            <div class="filter-pill" style="gap:6px;">
+                <i class="fas fa-calendar-alt filter-icon" aria-hidden="true"></i>
+                <input id="start-date" type="date" class="date-input" aria-label="Fecha inicio">
+                <span style="color:#c2daca;">—</span>
+                <input id="end-date" type="date" class="date-input" aria-label="Fecha fin">
+            </div>
+        </div>
+
+        <div class="search-wrapper">
+            <i class="fas fa-search"></i>
+            <input id="search" type="text" class="search" placeholder="Buscar factura, cliente o producto..." aria-label="Buscar">
+        </div>
+    </div>
+
+    <div class="banner">
+    <img src="https://res.cloudinary.com/dz7okl1ko/image/upload/v1752180853/5134606975890468276-removebg-preview_iskqsd.png" alt="Logo Copservir"></a>
+        <h1>VENTAS ESPECIALES</h1>
+        <p>En compras superiores al 60% del SMLV ($ 1.050.543)</p>
+    </div>
+
+    <!-- CARDS con iconos interactivos -->
+    <div class="cards">
+        <div class="card">
+            <h3>Total Ventas Especiales</h3>
+            <h2 id="total-ventas">$ 0</h2>
+            <span class="trend"><i class="fas fa-arrow-up"></i> vs. mes anterior</span>
+        </div>
+        <div class="card">
+            <h3>Cantidad de Facturas</h3>
+            <h2 id="cantidad-facturas">0</h2>
+            <span class="trend"><i class="fas fa-calendar"></i> Cantidad de Facturas a la Fecha</span>
+        </div>
+        <div class="card">
+            <h3>Clientes Frecuentes</h3>
+            <!-- contador visible -->
+            <h2 id="clientes-frecuentes-count">0<br><span style="font-size: 1rem; font-weight: 400; color: #658e7a;">activos</span></h2>
+            <!-- contenedor para el desplegable de clientes frecuentes -->
+            <div id="clientes-frecuentes-list" style="margin-top:8px;"></div>
+            <span class="trend"><i class="fas fa-star"></i> 20% más compras</span>
+        </div>
+        <div class="card">
+            <h3>Porcentaje sobre Total de las Ventas %</h3>
+            <h2 id="porcentaje-sobre-total">0%</h2>
+            <span class="trend"><i class="fas fa-percentage"></i> del total de ventas</span>
+        </div>
+    </div>
+
+    <!-- TABLA con estilo mejorado -->
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th> PDV </th>
+                    <th>Factura</th>
+                    <th>Cliente</th>
+                    <th>Referencia</th>
+                    <th>Producto</th>
+                    <th>Cantidad</th>
+                    <th>Precio</th>
+                    <th>Total Factura</th>
+                    <th>Tipo Venta</th>
+                    <th>Fecha</th>
+                    <th>Visualizar Factura</th>
+                </tr>
+            </thead>
+            <tbody id="tabla-body">
+                <tr><td colspan="10" style="text-align: center; padding: 40px;">Cargando datos...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+<script>
+// JS: mantiene tu lógica original de base de datos
+const tablaBody = document.getElementById('tabla-body');
+const searchInput = document.getElementById('search');
+let allRows = [];
+let selectedIdComercial = '';
+let selectedCliente = '';
+// total global (base) obtenido desde /api/ventas — no cambia con filtros
+let baselineTotalAll = 0;
+// total resultante tras aplicar filtros en el cliente
+let filteredTotal = 0;
+// filtros de fecha (YYYY-MM-DD)
+let selectedStartDate = '';
+let selectedEndDate = '';
+
+function fmtMoney(v) {
+    if (v === null || v === undefined || v === '') return '';
+    const n = Number(v);
+    if (isNaN(n)) return v;
+    return n.toLocaleString('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+}
+
+function render(rows) {
+    if (!rows || rows.length === 0) {
+        tablaBody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:40px;">No hay registros.</td></tr>';
+        return;
+    }
+    
+    const html = rows.map(r => {
+        // Formato de cantidad (unidades + fracciones)
+        let cantidad = '';
+        if (r.CantidadUnidades !== undefined && r.CantidadUnidades !== null) {
+            cantidad = r.CantidadUnidades.toString();
+            if (r.CantidadFracciones && r.CantidadFracciones !== '0' && r.CantidadFracciones !== 0) {
+                cantidad += ',' + r.CantidadFracciones;
+            }
+        }
+        
+        // Formato de fecha
+        let fechaFormateada = r.Fecha || '';
+        if (r.Fecha) {
+            try {
+                const fecha = new Date(r.Fecha);
+                if (!isNaN(fecha.getTime())) {
+                    fechaFormateada = fecha.toLocaleString('es-CO', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric'
+                    });
+                }
+            } catch (e) {
+                // Si hay error, dejamos el valor original
+            }
+        }
+        
+        return `<tr>
+            <td>${r.idComercial || ''}</td>
+            <td><b>${r.NumeroFactura || ''}</b></td>
+            <td>${r.NumeroDocumentoCliente || ''}</td>
+            <td>${r.Refe || ''}</td>
+            <td>${r.NombreProducto || ''}</td>
+            <td><span class="cantidad-badge">${cantidad || '0'}</span></td>
+            <td>${fmtMoney(r.ValorTotal)}</td>
+            <td>${fmtMoney(r.Total)}</td>
+            <td><span class="status-badge">${r.TipoVentaDescripcion || ''} · </span></td>
+            <td>${fechaFormateada}</td>
+            <td class="action-icons">
+                <i class="far fa-eye" title="Ver detalle" onclick="viewFile('${(r.NombreFactura||'').replace(/'/g, "\\'" )}')"></i>
+            </td>
+        </tr>`;
+    }).join('');
+    
+    tablaBody.innerHTML = html;
+}
+
+function updateFrequentClients(rows){
+    // Calcula clientes que tienen más de una factura (conteo de facturas únicas por NumeroDocumentoCliente)
+    const countEl = document.getElementById('clientes-frecuentes-count');
+    const listContainer = document.getElementById('clientes-frecuentes-list');
+    if(!countEl || !listContainer) return;
+    if(!rows || rows.length === 0){
+        countEl.innerHTML = `0<br><span style="font-size: 1rem; font-weight: 400; color: #658e7a;">activos</span>`;
+        listContainer.innerHTML = '';
+        return;
+    }
+    const map = new Map();
+    rows.forEach(r => {
+        const client = (r.NumeroDocumentoCliente || '').toString().trim();
+        const factura = (r.NumeroFactura || '').toString().trim();
+        if(!client || !factura) return;
+        if(!map.has(client)) map.set(client, new Set());
+        map.get(client).add(factura);
+    });
+    const frequent = Array.from(map.entries()).map(([client,set])=>({client, count: set.size})).filter(x=>x.count>1).sort((a,b)=>b.count-a.count);
+    const count = frequent.length;
+    countEl.innerHTML = `${count}<br><span style="font-size: 1rem; font-weight: 400; color: #658e7a;">activos</span>`;
+    if(count === 0){
+        listContainer.innerHTML = '';
+        return;
+    }
+    // crear un select desplegable para evitar amontonamiento
+    const options = frequent.slice(0,50).map(f => `<option value="${f.client}">${f.client} (${f.count})</option>`).join('');
+    const selectHtml = `<select id="frequent-clients-select" class="filter-select" aria-label="Clientes frecuentes"><option value="">Seleccionar cliente</option>${options}</select>`;
+    listContainer.innerHTML = selectHtml;
+    const sel = document.getElementById('frequent-clients-select');
+    if(sel){
+        sel.onchange = ()=>{
+            selectedCliente = sel.value || '';
+            // sincronizar con el select principal de clientes si existe
+            const main = document.getElementById('cliente-select');
+            if(main){ main.value = selectedCliente; }
+            applyFilter();
+        };
+    }
+}
+
+function populateIdComercialSelect(rows){
+    const sel = document.getElementById('idcomercial-select');
+    if(!sel) return;
+    // obtener valores únicos
+    const set = new Set();
+    (rows||[]).forEach(r=>{
+        if(r && r.idComercial !== undefined && r.idComercial !== null){
+            set.add(String(r.idComercial));
+        }
+    });
+    const arr = Array.from(set).sort((a,b)=>a.localeCompare(b, undefined, {numeric:true}));
+    // limpiar opciones excepto la primera
+    sel.innerHTML = '<option value="">Filtrar por PDV</option>' + arr.map(v=>`<option value="${v}">${v}</option>`).join('');
+    // mantener selección si existe
+    if(selectedIdComercial){
+        sel.value = selectedIdComercial;
+    }
+    // use onchange to avoid duplicate listeners when repopulating
+    sel.onchange = ()=>{
+        selectedIdComercial = sel.value || '';
+        applyFilter();
+    };
+}
+
+function populateClienteSelect(rows){
+    const sel = document.getElementById('cliente-select');
+    if(!sel) return;
+    const set = new Set();
+    (rows||[]).forEach(r=>{
+        if(r && r.NumeroDocumentoCliente !== undefined && r.NumeroDocumentoCliente !== null){
+            set.add(String(r.NumeroDocumentoCliente));
+        }
+    });
+    const arr = Array.from(set).sort((a,b)=>a.localeCompare(b, undefined, {numeric:true}));
+    sel.innerHTML = '<option value="">Filtar por Cliente</option>' + arr.map(v=>`<option value="${v}">${v}</option>`).join('');
+    if(selectedCliente){ sel.value = selectedCliente }
+    sel.onchange = ()=>{ selectedCliente = sel.value || ''; applyFilter(); };
+}
+
+// Inicializar listeners de fecha
+const startDateInput = document.getElementById('start-date');
+const endDateInput = document.getElementById('end-date');
+if(startDateInput){
+    startDateInput.addEventListener('change', ()=>{
+        selectedStartDate = startDateInput.value || '';
+        applyFilter();
+    });
+}
+if(endDateInput){
+    endDateInput.addEventListener('change', ()=>{
+        selectedEndDate = endDateInput.value || '';
+        applyFilter();
+    });
+}
+
+function updateCards(rows){
+    // calcular sum_total_unique_facturas y distinct count por NumeroFactura
+    const uniques = new Map();
+    (rows||[]).forEach(r=>{
+        const nf = (r.NumeroFactura||'').toString().trim();
+        if(!nf) return;
+        if(!uniques.has(nf)){
+            const val = r.Total;
+            const num = (val===null||val===undefined||val==='')?0:Number(val);
+            uniques.set(nf, isNaN(num)?0:num);
+        }
+    });
+    const sum = Array.from(uniques.values()).reduce((a,b)=>a+b,0);
+    const count = uniques.size;
+    const totalEl = document.getElementById('total-ventas');
+    const countEl = document.getElementById('cantidad-facturas');
+    if(totalEl) totalEl.innerText = fmtMoney(sum);
+    if(countEl) countEl.innerText = count;
+    // almacenar total filtrado y actualizar porcentaje relativo al total global
+    filteredTotal = sum;
+    updatePercentageCard();
+}
+
+function updatePercentageCard(){
+    const el = document.getElementById('porcentaje-sobre-total');
+    if(!el) return;
+    if(!baselineTotalAll || baselineTotalAll === 0){
+        el.innerText = '0%';
+        return;
+    }
+    const pct = (filteredTotal / baselineTotalAll) * 100;
+    const formatted = pct >= 10 ? Math.round(pct) + '%' : pct.toFixed(1) + '%';
+    el.innerText = formatted;
+}
+
+async function fetchData() {
+    try{
+        const res = await fetch('/api/ventas');
+        if(!res.ok) throw new Error('HTTP '+res.status);
+        const j = await res.json();
+        allRows = j.rows || [];
+        // guardar el total global único (provisto por el backend)
+        baselineTotalAll = Number(j.sum_total_unique_facturas) || 0;
+        populateIdComercialSelect(allRows);
+        populateClienteSelect(allRows);
+        // actualizar métricas en las cards
+        const totalEl = document.getElementById('total-ventas');
+        const countEl = document.getElementById('cantidad-facturas');
+        if (j.sum_total_unique_facturas !== undefined && totalEl) {
+            totalEl.innerText = fmtMoney(j.sum_total_unique_facturas);
+        }
+        if (j.distinct_facturas_count !== undefined && countEl) {
+            countEl.innerText = j.distinct_facturas_count;
+        }
+        applyFilter();
+    }catch(e){
+        tablaBody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:40px; color:#991b1b;">
+            <center><i class="fas fa-exclamation-circle"></i> Error cargando datos: ${e.message}</center>
+        </td></tr>`;
+    }
+}
+
+function applyFilter() {
+    const q = (searchInput.value || '').toLowerCase().trim();
+    // primero filtrar por idComercial si hay selección
+    let base = allRows;
+    if(selectedIdComercial){
+        base = (allRows||[]).filter(r => String(r.idComercial) === String(selectedIdComercial));
+    }
+    // luego filtrar por cliente si está seleccionado
+    if(selectedCliente){
+        base = (base||[]).filter(r => String(r.NumeroDocumentoCliente) === String(selectedCliente));
+    }
+    // luego filtrar por rango de fechas si se han seleccionado
+    if(selectedStartDate || selectedEndDate){
+        const startTs = selectedStartDate ? (new Date(selectedStartDate + 'T00:00:00')).getTime() : null;
+        const endTs = selectedEndDate ? (new Date(selectedEndDate + 'T23:59:59.999')).getTime() : null;
+        base = (base||[]).filter(r => {
+            const dateStr = r.Fecha || r.FechaHora || r.FechaHora;
+            if(!dateStr) return false;
+            const d = new Date(dateStr);
+            if(isNaN(d.getTime())) return false;
+            const t = d.getTime();
+            if(startTs !== null && t < startTs) return false;
+            if(endTs !== null && t > endTs) return false;
+            return true;
+        });
+    }
+    if(!q){
+        render(base);
+        updateFrequentClients(base);
+        updateCards(base);
+        return;
+    }
+    const filtered = (base||[]).filter(r => 
+        (r.idComercial || '').toString().toLowerCase().includes(q) ||
+        (r.NumeroFactura || '').toString().toLowerCase().includes(q) ||
+        (r.NumeroDocumentoCliente || '').toString().toLowerCase().includes(q) ||
+        (r.NombreProducto || '').toString().toLowerCase().includes(q) ||
+        (r.Refe || '').toString().toLowerCase().includes(q)
+    );
+    render(filtered);
+    updateFrequentClients(filtered);
+    updateCards(filtered);
+}
+
+searchInput.addEventListener('input', applyFilter);
+
+// Auto-refresh cada 60s (manteniendo tu lógica)
+fetchData();
+setInterval(fetchData, 60000);
+</script>
+
+<script>
+function viewFile(nombre){
+    if(!nombre) return alert('Nombre de factura desconocido');
+    const url = '/file/view?nombre=' + encodeURIComponent(nombre);
+    window.open(url, '_blank');
+}
+
+function downloadFile(nombre){
+    if(!nombre) return alert('Nombre de factura desconocido');
+    const url = '/file/download?nombre=' + encodeURIComponent(nombre);
+    // Forzar descarga abriendo en nueva pestaña
+    window.open(url, '_blank');
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <!-- ESTE ES EL DASHBOARD INTERACTIVOO DE VENTAS ESPECIALES 
+  SE VISUALIZA LA INFORMACIÓN DE LAS VENTAS ESPECIALES EN UNA INTERFAZ INTERACTIVA Y ESTAN COMENTADO EL SOLO NOMBRE DE LAS LIBRERIAS QUE SE UTILIZAN PARA REALIZAR LOS GRAFICOS Y EL ESTILO -->
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard · Ventas Especiales</title>
+  <!-- Tailwind Play CDN (v3) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Fonts & Icons: Inter + FontAwesome (match index.html) -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <!-- jQuery + DataTables (DataTables necesita jQuery) -->
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+  <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+  <!-- Font Awesome (icons used in sidebar to match index.html) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <style>
+    /* Base font to match index.html */
+    body, input, select, button { font-family: 'Inter', sans-serif; }
+
+    /* Pequeñas mejoras visuales */
+    .kpi-card { min-width: 220px }
+    .kpi-card .kpi-icon{ width:40px; height:40px; display:inline-flex; align-items:center; justify-content:center; border-radius:10px; background:#def7e8; color:#056b41; font-size:18px }
+    .kpi-card h4{ margin-top:6px; font-size:0.85rem; color:#4b6b5a }
+    .kpi-card .kpi-value{ font-size:1.6rem; font-weight:700; color:#0f3b2d }
+
+    .chart-card { min-height: 320px; height: 100%; display:flex; flex-direction:column }
+    .chart-card canvas { width:100% !important; height:100% !important; max-height:340px }
+
+    /* Banner */
+    .dashboard-banner{ background: linear-gradient(112deg, #e6edea 0%, #0d6b4a 100%); color:white; border-radius:18px; padding:18px 20px; display:flex; align-items:center; gap:16px }
+    .dashboard-banner img{ height:64px; opacity:0.95 }
+    .dashboard-banner .banner-text h3{ margin:0; font-size:1.1rem; font-weight:800 }
+    .dashboard-banner .banner-text p{ margin:0; opacity:0.95 }
+
+    /* Active filter pill */
+    .active-filters { display:flex; gap:8px; align-items:center }
+    .filter-chip { background:#ecfdf5; color:#065f46; padding:6px 10px; border-radius:999px; font-weight:600; border:1px solid #d1fae5 }
+
+    /* Sidebar styles copied/adapted from index.html for visual parity */
+    .sidebar {
+        width: 260px;
+        background: #ffffff;
+        height: 100vh;
+        padding: 32px 20px;
+        border-right: 1px solid rgba(0, 40, 20, 0.08);
+        box-shadow: 4px 0 20px rgba(0, 40, 20, 0.03);
+        position: sticky;
+        top: 0;
+    }
+    .sidebar h2 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        margin-bottom: 40px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: #0a3b2e;
+    }
+    .sidebar h2 i { color: #10b981; font-size: 1.8rem; }
+    .sidebar ul { list-style: none; padding-left:0 }
+    .sidebar ul li { padding: 14px 18px; margin-bottom: 6px; border-radius: 14px; cursor: pointer; color: #2c4a3e; font-weight: 500; display: flex; align-items: center; gap: 14px; transition: all 0.2s ease; }
+    .sidebar ul li i { width: 24px; font-size: 1.25rem; color: #5e8b7c; }
+    .sidebar ul li.active, .sidebar ul li:hover { background: #e2f3e9; color: #0b614b; transform: scale(1.02); box-shadow: 0 6px 12px rgba(0, 60, 30, 0.08); }
+    .sidebar ul li.active i, .sidebar ul li:hover i { color: #0b7b5a; }
+    .sidebar ul li a.nav-link{ color:inherit; text-decoration:none; display:flex; align-items:center; gap:14px }
+    @media (max-width: 1000px) { .sidebar { display: none } }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+  <div class="flex">
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+      <h2><img src="https://res.cloudinary.com/dz7okl1ko/image/upload/v1752180853/5134606975890468276-removebg-preview_iskqsd.png" alt="Logo Copservir"></h2>
+      <ul>
+        <li><a class="nav-link" href="/"><i class="fas fa-file-alt"></i> Reportes</a></li>
+        <li class="active"><a class="nav-link" href="/dashboard"><i class="fas fa-chart-pie"></i> Dashboard</a></li>
+        <li><i class="fas fa-users"></i> Clientes</li>
+        <li><i class="fas fa-store"></i> Puntos de Venta</li>
+      </ul>
+    </div>
+
+    <div class="main flex-1 p-6">
+      <header class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-2xl font-bold">Dashboard · Ventas Especiales</h1>
+        <p class="text-sm text-gray-600">Resumen de KPIs, PDV top y distribución por tipo de venta.</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <div class="filter-pill" style="gap:6px;">
+          <i class="fas fa-calendar-alt filter-icon" aria-hidden="true"></i>
+          <input id="start-date" type="date" class="date-input" aria-label="Fecha inicio">
+          <span style="color:#c2daca;">—</span>
+          <input id="end-date" type="date" class="date-input" aria-label="Fecha fin">
+        </div>
+        <select id="idcomercial-filter" class="px-3 py-2 border rounded-md">
+          <option value="">PDV (todos)</option>
+        </select>
+        <button id="refresh-btn" class="bg-green-600 text-white px-4 py-2 rounded-md">Refrescar</button>
+        <div class="ml-4 active-filters" id="active-filters"></div>
+      </div>
+    </header>
+
+    <!-- Banner corto -->
+    <div class="dashboard-banner mb-6">
+      <img src="https://res.cloudinary.com/dz7okl1ko/image/upload/v1752180853/5134606975890468276-removebg-preview_iskqsd.png" alt="logo">
+      <div class="banner-text">
+        <h3>VENTAS ESPECIALES</h3>
+        <p class="text-sm">Facturas en promociones y descuentos especiales — resumen rápido</p>
+      </div>
+      <div class="ml-auto text-right text-sm">
+        <div id="banner-total" style="font-weight:700; font-size:1rem">Total: $ 0</div>
+        <div id="banner-count" style="opacity:0.9">Facturas: 0</div>
+      </div>
+    </div>
+
+    <!-- KPIs -->
+  <section class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      <div class="kpi-card bg-white p-4 rounded-xl shadow">
+        <div class="text-sm text-gray-500">Total Ventas (únicas)</div>
+        <div id="kpi-total" class="text-2xl font-bold mt-2">$ 0</div>
+      </div>
+      <div class="kpi-card bg-white p-4 rounded-xl shadow">
+        <div class="text-sm text-gray-500">Cantidad de Facturas</div>
+        <div id="kpi-count" class="text-2xl font-bold mt-2">0</div>
+      </div>
+      <div class="kpi-card bg-white p-4 rounded-xl shadow">
+        <div class="text-sm text-gray-500">Clientes Frecuentes</div>
+        <div id="kpi-frequent" class="text-2xl font-bold mt-2">0</div>
+      </div>
+      <div class="kpi-card bg-white p-4 rounded-xl shadow">
+        <div class="text-sm text-gray-500">Tipo de Venta más común</div>
+        <div id="kpi-most-common-type" class="text-2xl font-bold mt-2">-</div>
+      </div>
+    </section>
+
+    <!-- Charts: PDV por facturas, PDV por ventas, tipo de venta -->
+    <section class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+      <div class="chart-card bg-white p-4 rounded-xl shadow flex flex-col">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-lg font-semibold">PDV: más facturas</h2>
+          <small class="text-sm text-gray-500">Top PDVs por cantidad</small>
+        </div>
+        <canvas id="chart-pdv-count" class="flex-1"></canvas>
+      </div>
+
+      <div class="chart-card bg-white p-4 rounded-xl shadow flex flex-col">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-lg font-semibold">PDV: mayores ventas</h2>
+          <small class="text-sm text-gray-500">Top PDVs por total ventas</small>
+        </div>
+        <canvas id="chart-pdv-sales" class="flex-1"></canvas>
+      </div>
+
+      <div class="chart-card bg-white p-4 rounded-xl shadow col-span-1 lg:col-span-2 flex flex-col">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-lg font-semibold">Distribución por Tipo de Venta</h2>
+          <small class="text-sm text-gray-500">Qué tipo de venta es más común</small>
+        </div>
+        <canvas id="chart-tipoventa" class="flex-1"></canvas>
+      </div>
+    </section>
+
+    </div>
+  </div>
+
+  <script>
+  // Utilidades
+  function fmtMoney(v){
+    if(v===null||v===undefined) return '-';
+    const n = Number(v);
+    if(isNaN(n)) return v;
+    return n.toLocaleString('es-CO', {style:'currency', currency:'COP', maximumFractionDigits:0});
+  }
+
+  // Estado
+  let allRows = [];
+  let invoicesMap = new Map(); // NumeroFactura -> {NumeroFactura, Fecha, idComercial, NumeroDocumentoCliente, NombreFactura, Total, TipoVentaDescripcion}
+  let baselineTotal = 0; // from backend
+  let selectedStartDate = '';
+  let selectedEndDate = '';
+  let selectedPdv = '';
+  let selectedTipo = '';
+
+  // Charts instances
+  let chartPdvCount = null;
+  let chartPdvSales = null;
+  let chartTipoVenta = null;
+
+  async function fetchData(){
+    try{
+      const res = await fetch('/api/ventas');
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      const j = await res.json();
+      allRows = j.rows || [];
+      baselineTotal = Number(j.sum_total_unique_facturas) || 0;
+      // populate PDV filter from full dataset once
+      populatePDVFilter();
+      // apply current filters (dates, pdv) on the fetched rows
+      applyFilters();
+    }catch(e){
+      console.error('fetchData error', e);
+      alert('Error al obtener datos: '+ e.message);
+    }
+  }
+
+  function applyFilters(){
+    // base rows
+    let rows = allRows || [];
+    // filter by date range if provided
+    if(selectedStartDate || selectedEndDate){
+      const startTs = selectedStartDate ? (new Date(selectedStartDate + 'T00:00:00')).getTime() : null;
+      const endTs = selectedEndDate ? (new Date(selectedEndDate + 'T23:59:59.999')).getTime() : null;
+      rows = rows.filter(r => {
+        if(!r.Fecha) return false;
+        const ts = new Date(r.Fecha).getTime();
+        if(startTs && ts < startTs) return false;
+        if(endTs && ts > endTs) return false;
+        return true;
+      });
+    }
+    // filter by PDV if selected
+    if(selectedPdv){
+      rows = rows.filter(r => ((String(r.idComercial||'').trim() || '(sin PDV)') === selectedPdv));
+    }
+    // build invoicesMap from the filtered rows (one entry per NumeroFactura)
+    invoicesMap = new Map();
+    for(const r of rows){
+      const nfRaw = r.NumeroFactura;
+      if(!nfRaw) continue;
+      const nf = String(nfRaw).trim();
+      if(!nf) continue;
+      if(!invoicesMap.has(nf)){
+        let total = 0;
+        try{ total = Number(r.Total) || 0; }catch(e){ total = 0 }
+        invoicesMap.set(nf, {
+          NumeroFactura: nf,
+          Fecha: r.Fecha || null,
+          idComercial: r.idComercial || null,
+          NumeroDocumentoCliente: r.NumeroDocumentoCliente || null,
+          NombreFactura: r.NombreFactura || null,
+          Total: total,
+          TipoVentaDescripcion: r.TipoVentaDescripcion || r.TipoVenta || null
+        });
+      }
+    }
+    updateKPIs();
+    updatePDVAggregatesAndCharts();
+    updateBanner();
+    renderActiveFilters();
+  }
+
+  function updateBanner(){
+    const invoices = Array.from(invoicesMap.values());
+    const sum = invoices.reduce((s,i)=>s + (Number(i.Total)||0), 0);
+    const count = invoices.length;
+    const bt = document.getElementById('banner-total');
+    const bc = document.getElementById('banner-count');
+    if(bt) bt.innerText = 'Total: ' + fmtMoney(sum);
+    if(bc) bc.innerText = 'Facturas: ' + count;
+  }
+
+  function renderActiveFilters(){
+    const el = document.getElementById('active-filters');
+    if(!el) return;
+    const chips = [];
+    if(selectedStartDate) chips.push(`<span class="filter-chip">Desde ${selectedStartDate}</span>`);
+    if(selectedEndDate) chips.push(`<span class="filter-chip">Hasta ${selectedEndDate}</span>`);
+    if(selectedPdv) chips.push(`<span class="filter-chip">PDV: ${selectedPdv}</span>`);
+    if(selectedTipo) chips.push(`<span class="filter-chip">Tipo: ${selectedTipo}</span>`);
+    if(chips.length){
+      chips.push(`<button onclick="clearAllFilters()" class="ml-2 px-3 py-1 rounded bg-white border text-sm">Limpiar</button>`);
+    }
+    el.innerHTML = chips.join(' ');
+  }
+
+  function clearAllFilters(){
+    selectedStartDate = '';
+    selectedEndDate = '';
+    selectedPdv = '';
+    selectedTipo = '';
+    const sd = document.getElementById('start-date'); if(sd) sd.value = '';
+    const ed = document.getElementById('end-date'); if(ed) ed.value = '';
+    const sel = document.getElementById('idcomercial-filter'); if(sel) sel.value = '';
+    applyFilters();
+  }
+
+  function buildInvoicesMap(){
+    invoicesMap = new Map();
+    for(const r of allRows){
+      const nfRaw = r.NumeroFactura;
+      if(!nfRaw) continue;
+      const nf = String(nfRaw).trim();
+      if(nf==='') continue;
+      // si no existe, añadir con los campos relevantes
+      if(!invoicesMap.has(nf)){
+        let total = 0;
+        try{ total = Number(r.Total) || 0; }catch(e){ total = 0 }
+        invoicesMap.set(nf, {
+          NumeroFactura: nf,
+          Fecha: r.Fecha || null,
+          idComercial: r.idComercial || null,
+          NumeroDocumentoCliente: r.NumeroDocumentoCliente || null,
+          NombreFactura: r.NombreFactura || null,
+          Total: total,
+          TipoVentaDescripcion: r.TipoVentaDescripcion || r.TipoVentaDescripcion || r.TipoVenta || null
+        });
+      }
+    }
+  }
+
+  function updateKPIs(){
+    const totalEl = document.getElementById('kpi-total');
+    const countEl = document.getElementById('kpi-count');
+    const freqEl = document.getElementById('kpi-frequent');
+    const pctEl = document.getElementById('kpi-percent');
+
+    // sum totals and count from invoicesMap
+    const invoices = Array.from(invoicesMap.values());
+    const sum = invoices.reduce((s,i)=>s + (Number(i.Total)||0), 0);
+    const count = invoices.length;
+
+    // clientes frecuentes: contar clientes con >1 factura
+    const mapClient = new Map();
+    for(const inv of invoices){
+      const c = String(inv.NumeroDocumentoCliente||'').trim();
+      const nf = inv.NumeroFactura;
+      if(!c) continue;
+      if(!mapClient.has(c)) mapClient.set(c, new Set());
+      mapClient.get(c).add(nf);
+    }
+    const frequentClients = Array.from(mapClient.values()).filter(s=>s.size>1).length;
+
+    if(totalEl) totalEl.innerText = fmtMoney(sum);
+    if(countEl) countEl.innerText = count;
+    if(freqEl) freqEl.innerText = frequentClients;
+    if(pctEl){
+      if(!baselineTotal || baselineTotal === 0) pctEl.innerText = '0%';
+      else {
+        const pct = (sum / baselineTotal) * 100;
+        pctEl.innerText = pct>=10 ? Math.round(pct) + '%' : pct.toFixed(1) + '%';
+      }
+    }
+  }
+
+  function updatePDVAggregatesAndCharts(){
+    const invoices = Array.from(invoicesMap.values());
+    const byPdvCount = new Map();
+    const byPdvSales = new Map();
+    const tipoMap = new Map();
+
+    for(const inv of invoices){
+      const pdv = String(inv.idComercial||'').trim() || '(sin PDV)';
+      // count
+      byPdvCount.set(pdv, (byPdvCount.get(pdv) || 0) + 1);
+      // sales
+      byPdvSales.set(pdv, (byPdvSales.get(pdv) || 0) + (Number(inv.Total)||0));
+      // tipo
+      const tipo = String(inv.TipoVentaDescripcion||'Sin Tipo').trim();
+      tipoMap.set(tipo, (tipoMap.get(tipo) || 0) + 1);
+    }
+
+    // prepare top N
+    const topCount = Array.from(byPdvCount.entries()).sort((a,b)=>b[1]-a[1]).slice(0,10);
+    const topSales = Array.from(byPdvSales.entries()).sort((a,b)=>b[1]-a[1]).slice(0,10);
+
+    const labelsCount = topCount.map(x=>x[0]);
+    const dataCount = topCount.map(x=>x[1]);
+    const labelsSales = topSales.map(x=>x[0]);
+    const dataSales = topSales.map(x=>x[1]);
+
+    const tipoLabels = Array.from(tipoMap.keys());
+    const tipoData = Array.from(tipoMap.values());
+
+    // most common tipo
+    let mostCommonTipo = '-';
+    if(tipoData.length){
+      const tipoEntries = Array.from(tipoMap.entries());
+      tipoEntries.sort((a,b)=>b[1]-a[1]);
+      mostCommonTipo = tipoEntries[0][0] || '-';
+    }
+    const mostEl = document.getElementById('kpi-most-common-type');
+    if(mostEl) mostEl.innerText = mostCommonTipo;
+
+    // render charts
+    renderBarChart('chart-pdv-count', labelsCount, dataCount, 'Facturas');
+    renderBarChart('chart-pdv-sales', labelsSales, dataSales, 'Ventas (COP)', true);
+    renderPieChart('chart-tipoventa', tipoLabels, tipoData);
+  }
+
+  function renderBarChart(canvasId, labels, data, labelName, money=false){
+    const ctx = document.getElementById(canvasId);
+    if(!ctx) return;
+    const cfg = {
+      type: 'bar',
+      data: { labels, datasets: [{ label: labelName, data, backgroundColor: '#10b981' }] },
+      options: { responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true, ticks:{callback: v => money ? fmtMoney(v) : v}}} }
+    };
+    // destroy old
+    if(canvasId === 'chart-pdv-count' && chartPdvCount){ chartPdvCount.destroy(); chartPdvCount = null; }
+    if(canvasId === 'chart-pdv-sales' && chartPdvSales){ chartPdvSales.destroy(); chartPdvSales = null; }
+    if(canvasId === 'chart-pdv-count'){
+      chartPdvCount = new Chart(ctx, cfg);
+      // click handler: set PDV filter
+      ctx.onclick = function(evt){
+        const points = chartPdvCount.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, false);
+        if(points && points.length){
+          const idx = points[0].index;
+          const label = chartPdvCount.data.labels[idx];
+          // toggle selection
+          if(selectedPdv === label) selectedPdv = '';
+          else selectedPdv = label;
+          const sel = document.getElementById('idcomercial-filter'); if(sel) sel.value = selectedPdv;
+          applyFilters();
+        }
+      };
+    }
+    if(canvasId === 'chart-pdv-sales'){
+      chartPdvSales = new Chart(ctx, cfg);
+      ctx.onclick = function(evt){
+        const points = chartPdvSales.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, false);
+        if(points && points.length){
+          const idx = points[0].index;
+          const label = chartPdvSales.data.labels[idx];
+          if(selectedPdv === label) selectedPdv = '';
+          else selectedPdv = label;
+          const sel = document.getElementById('idcomercial-filter'); if(sel) sel.value = selectedPdv;
+          applyFilters();
+        }
+      };
+    }
+  }
+
+  function renderPieChart(canvasId, labels, data){
+    const ctx = document.getElementById(canvasId);
+    if(!ctx) return;
+    const colors = [ '#10b981', '#34d399', '#86efac', '#fde68a', '#fb7185', '#60a5fa', '#a78bfa' ];
+    const cfg = { type:'doughnut', data:{ labels, datasets:[{ data, backgroundColor: labels.map((_,i)=>colors[i%colors.length]) }] }, options:{ responsive:true } };
+    if(chartTipoVenta){ chartTipoVenta.destroy(); chartTipoVenta = null; }
+    chartTipoVenta = new Chart(ctx, cfg);
+    // clicking a slice toggles selectedTipo filter
+    ctx.onclick = function(evt){
+      const points = chartTipoVenta.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, false);
+      if(points && points.length){
+        const idx = points[0].index;
+        const label = chartTipoVenta.data.labels[idx];
+        if(selectedTipo === label) selectedTipo = '';
+        else selectedTipo = label;
+        // apply selectedTipo as additional filter
+        applyFilters();
+      }
+    };
+  }
+
+  function populatePDVFilter(){
+    const sel = document.getElementById('idcomercial-filter');
+    if(!sel) return;
+    const pdvs = new Set();
+    for(const inv of invoicesMap.values()) pdvs.add(String(inv.idComercial||'').trim() || '(sin PDV)');
+    const arr = Array.from(pdvs).sort((a,b)=>a.localeCompare(b, undefined, {numeric:true}));
+    // populate using full dataset (allRows) to ensure all PDVs available
+    const pdvSet = new Set();
+    for(const r of (allRows||[])) pdvSet.add(String(r.idComercial||'').trim() || '(sin PDV)');
+    const pdvArr = Array.from(pdvSet).sort((a,b)=>a.localeCompare(b, undefined, {numeric:true}));
+    sel.innerHTML = '<option value="">PDV (todos)</option>' + pdvArr.map(v=>`<option value="${v}">${v}</option>`).join('');
+    sel.value = selectedPdv || '';
+    sel.onchange = ()=>{ selectedPdv = sel.value || ''; applyFilters(); };
+  }
+
+  function filterByPDVAndRender(pdvValue){
+    if(!pdvValue){ // show all
+      updateKPIs();
+      updatePDVAggregatesAndCharts();
+      populateTable();
+      return;
+    }
+    // filter invoicesMap
+    const filtered = Array.from(invoicesMap.values()).filter(inv => (String(inv.idComercial||'').trim() || '(sin PDV)') === pdvValue);
+    // temp maps
+    const tmpMap = new Map();
+    for(const inv of filtered) tmpMap.set(inv.NumeroFactura, inv);
+    // update some UI using temp maps
+    // KPIs
+    const sum = Array.from(tmpMap.values()).reduce((s,i)=>s + (Number(i.Total)||0), 0);
+    document.getElementById('kpi-total').innerText = fmtMoney(sum);
+    document.getElementById('kpi-count').innerText = tmpMap.size;
+    // charts - build pdv aggregations from these invoices (they will be small)
+    const savedInvoicesMap = invoicesMap;
+    invoicesMap = tmpMap;
+    updatePDVAggregatesAndCharts();
+    invoicesMap = savedInvoicesMap;
+    populateTable(Array.from(tmpMap.values()));
+  }
+
+  // DataTables table population (uses invoices unique)
+  let invoicesTable = null;
+  function populateTable(dataOverride=null){
+    const tableEl = document.getElementById('invoices-table');
+    if(!tableEl) return; // tabla eliminada en la vista; evitar errores
+    const tbody = tableEl.querySelector('tbody');
+    const invoices = dataOverride || Array.from(invoicesMap.values());
+    tbody.innerHTML = invoices.map(inv => `
+      <tr>
+        <td>${inv.NumeroFactura}</td>
+        <td>${inv.Fecha? new Date(inv.Fecha).toLocaleString() : ''}</td>
+        <td>${inv.idComercial || ''}</td>
+        <td>${inv.NumeroDocumentoCliente || ''}</td>
+        <td>${inv.NombreFactura || ''}</td>
+        <td>${fmtMoney(inv.Total)}</td>
+        <td>${inv.TipoVentaDescripcion || ''}</td>
+        <td>
+          <button class="view-btn bg-blue-500 text-white px-2 py-1 rounded mr-1" data-n="${encodeURIComponent(inv.NombreFactura || '')}">Ver</button>
+          <button class="dl-btn bg-gray-700 text-white px-2 py-1 rounded" data-n="${encodeURIComponent(inv.NombreFactura || '')}">Descargar</button>
+        </td>
+      </tr>
+    `).join('');
+
+    // bind actions
+    document.querySelectorAll('.view-btn').forEach(b=> b.onclick = (e)=>{
+      const n = decodeURIComponent(b.getAttribute('data-n')||'');
+      if(!n) return alert('Nombre no disponible');
+      window.open('/file/view?nombre=' + encodeURIComponent(n), '_blank');
+    });
+    document.querySelectorAll('.dl-btn').forEach(b=> b.onclick = (e)=>{
+      const n = decodeURIComponent(b.getAttribute('data-n')||'');
+      if(!n) return alert('Nombre no disponible');
+      window.open('/file/download?nombre=' + encodeURIComponent(n), '_blank');
+    });
+
+    // init DataTables if needed
+    if($.fn.DataTable){
+      if(invoicesTable){ invoicesTable.destroy(); $('#invoices-table').find('tbody').off(); }
+      invoicesTable = $('#invoices-table').DataTable({
+        pageLength: 10,
+        order: [[1, 'desc']],
+        columnDefs: [{ targets: [7], orderable: false }]
+      });
+    }
+  }
+
+  // events
+  document.getElementById('refresh-btn').addEventListener('click', fetchData);
+  // date inputs -> apply filters client-side
+  const sdInput = document.getElementById('start-date');
+  const edInput = document.getElementById('end-date');
+  if(sdInput){ sdInput.addEventListener('change', ()=>{ selectedStartDate = sdInput.value || ''; applyFilters(); }); }
+  if(edInput){ edInput.addEventListener('change', ()=>{ selectedEndDate = edInput.value || ''; applyFilters(); }); }
+
+  // auto-refresh on load and every 60s
+  fetchData();
+  setInterval(fetchData, 60000);
+  </script>
+</body>
+</html>
