@@ -15,34 +15,44 @@ except Exception:
 
 # Usar la misma configuración que en ventasespeciales.py
 DB_CONFIG = {
-    'host': '192.168.100.63',
-    'user': 'posweb',
-    'password': 'P0sW3b8842',
-    'database': 'posweb',
+    'host': 'siidb.copservir.com',
+    'user': 'jperdomolc',
+    'password': '!fG6kyc809:6',
+    'database': 'sii',
     'port': 3306
 }
 
 QUERY_DETALLE_FACTURAS = """
-SELECT 
-    f.idComercial,
-    f.NumeroFactura,
-    f.NumeroDocumentoCliente,
+SELECT DISTINCT
+    f.IDComercial, 
+    f.NumeroFactura, 
+    f.NumeroDocumentoCliente, 
     d.Refe,
-    d.NombreProducto,
+    p.NombreProducto,
     d.CantidadUnidades,
     d.CantidadFracciones,
     d.ValorDescuento,
     d.ValorTotal,
-    f.Total,
-    f.IdTipoVenta,
-    tv.Descripcion AS TipoVentaDescripcion,
-    f.Fecha
-FROM posweb.t_Facturave AS f
-INNER JOIN posweb.t_DetalleFacturave AS d 
-    ON f.IdFactura = d.IdFactura
-LEFT JOIN posweb.m_TipoVenta AS tv
+    f.Total, 
+    tv.Descripcion AS TipoVentaDescripcion, 
+    f.FechaHora AS Fecha,
+    CONCAT('Factura-', r.Prefijo, f.NumeroFactura, '.pdf') AS NombreFactura
+FROM sii.pos_t_Factura f
+INNER JOIN sii.pos_t_DetalleFactura AS d 
+    ON f.IDComercial = d.IDComercial 
+   AND f.NumeroCaja = d.NumeroCaja 
+   AND f.NumeroFactura = d.NumeroFactura
+LEFT JOIN sii.m_Producto AS p 
+    ON d.Refe = p.Refe
+LEFT JOIN sii.pos_m_TipoVenta tv 
     ON f.IdTipoVenta = tv.IdTipoVenta
-ORDER BY f.Fecha DESC, f.NumeroFactura;
+LEFT JOIN sii.pos_m_Resolucion r 
+    ON f.IDComercial = r.IDComercial 
+   AND f.NumeroCaja = r.NumeroCaja 
+   AND f.NumeroFactura BETWEEN r.InicioFactura AND r.FinFactura
+WHERE 
+  f.FechaHora >= '2026-03-05 00:00:00' 
+  AND f.Total >= 1050543;
 """
 
 
@@ -127,9 +137,42 @@ def fetch_and_print(limit=None):
 if __name__ == '__main__':
     # Argumento opcional: número de filas a mostrar
     lim = None
+    # argumentos:
+    #   fixed  -> refrescar base fija (desde 2026-01-01 hasta hoy-10d)
+    #   recent -> refrescar base reciente (últimos 10 días)
+    #   both   -> refrescar ambas (por defecto si no se indica)
+    mode = 'both'
     if len(sys.argv) > 1:
-        try:
-            lim = int(sys.argv[1])
-        except Exception:
-            lim = None
-    sys.exit(fetch_and_print(limit=lim))
+        a = sys.argv[1].lower()
+        if a in ('fixed', 'recent', 'both'):
+            mode = a
+        else:
+            # si es número, lo interpretamos como limit
+            try:
+                lim = int(sys.argv[1])
+            except Exception:
+                lim = None
+
+    try:
+        from cache_db import refresh_fixed, refresh_recent
+        if mode == 'fixed':
+            print('Refrescando base FIXED...')
+            res = refresh_fixed(DB_CONFIG, QUERY_DETALLE_FACTURAS, limit=lim)
+            print('Fixed updated:', res)
+            sys.exit(0)
+        elif mode == 'recent':
+            print('Refrescando base RECENT...')
+            res = refresh_recent(DB_CONFIG, QUERY_DETALLE_FACTURAS, limit=lim)
+            print('Recent updated:', res)
+            sys.exit(0)
+        else:
+            print('Refrescando ambas bases (FIXED y RECENT)...')
+            rf = refresh_fixed(DB_CONFIG, QUERY_DETALLE_FACTURAS, limit=lim)
+            rr = refresh_recent(DB_CONFIG, QUERY_DETALLE_FACTURAS, limit=lim)
+            print('Fixed:', rf)
+            print('Recent:', rr)
+            sys.exit(0)
+    except Exception as e:
+        print('No se pudo usar cache_db (o ocurrió error):', e)
+        print('Haciendo fetch directo en consola como fallback...')
+        sys.exit(fetch_and_print(limit=lim))

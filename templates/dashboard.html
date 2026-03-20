@@ -137,6 +137,10 @@
         <div class="text-sm text-gray-500">Tipo de Venta más común</div>
         <div id="kpi-most-common-type" class="text-2xl font-bold mt-2">-</div>
       </div>
+        <div class="kpi-card bg-white p-4 rounded-xl shadow">
+          <div class="text-sm text-gray-500">Puntos de Venta (únicos)</div>
+          <div id="kpi-pdv-count" class="text-2xl font-bold mt-2">0</div>
+        </div>
     </section>
 
     <!-- Charts: PDV por facturas, PDV por ventas, tipo de venta -->
@@ -194,7 +198,7 @@
 
   async function fetchData(){
     try{
-      const res = await fetch('/api/ventas');
+      const res = await fetch('/api/cache/rows');
       if(!res.ok) throw new Error('HTTP '+res.status);
       const j = await res.json();
       allRows = j.rows || [];
@@ -226,7 +230,7 @@
     }
     // filter by PDV if selected
     if(selectedPdv){
-      rows = rows.filter(r => ((String(r.idComercial||'').trim() || '(sin PDV)') === selectedPdv));
+      rows = rows.filter(r => ((String(r.IDComercial||'').trim() || '(sin PDV)') === selectedPdv));
     }
     // build invoicesMap from the filtered rows (one entry per NumeroFactura)
     invoicesMap = new Map();
@@ -241,7 +245,7 @@
         invoicesMap.set(nf, {
           NumeroFactura: nf,
           Fecha: r.Fecha || null,
-          idComercial: r.idComercial || null,
+          idComercial: r.IDComercial || null,
           NumeroDocumentoCliente: r.NumeroDocumentoCliente || null,
           NombreFactura: r.NombreFactura || null,
           Total: total,
@@ -304,7 +308,7 @@
         invoicesMap.set(nf, {
           NumeroFactura: nf,
           Fecha: r.Fecha || null,
-          idComercial: r.idComercial || null,
+          idComercial: r.IDComercial || null,
           NumeroDocumentoCliente: r.NumeroDocumentoCliente || null,
           NombreFactura: r.NombreFactura || null,
           Total: total,
@@ -345,6 +349,19 @@
         const pct = (sum / baselineTotal) * 100;
         pctEl.innerText = pct>=10 ? Math.round(pct) + '%' : pct.toFixed(1) + '%';
       }
+    }
+    // PDV metrics: unique PDV count only
+    try{
+      const pdvSet = new Set();
+      for(const inv of invoices){
+        const pdv = (String(inv.idComercial||'').trim() || '(sin PDV)');
+        pdvSet.add(pdv);
+      }
+      const pdvCount = pdvSet.size;
+      const elPdvCount = document.getElementById('kpi-pdv-count');
+      if(elPdvCount) elPdvCount.innerText = pdvCount;
+    }catch(e){
+      // silent fail: keep UI stable
     }
   }
 
@@ -439,7 +456,8 @@
   function renderPieChart(canvasId, labels, data){
     const ctx = document.getElementById(canvasId);
     if(!ctx) return;
-    const colors = [ '#10b981', '#34d399', '#86efac', '#fde68a', '#fb7185', '#60a5fa', '#a78bfa' ];
+  // Palette by section: distinct, pleasant colors (blue/teal/indigo/purple/coral/amber/cyan)
+  const colors = [ '#10B981', '#3B82F6', '#8B5CF6', '#F59E0B', '#EC4899', '#9CA3AF', '#06b6d4' ];
     const cfg = { type:'doughnut', data:{ labels, datasets:[{ data, backgroundColor: labels.map((_,i)=>colors[i%colors.length]) }] }, options:{ responsive:true } };
     if(chartTipoVenta){ chartTipoVenta.destroy(); chartTipoVenta = null; }
     chartTipoVenta = new Chart(ctx, cfg);
@@ -465,7 +483,7 @@
     const arr = Array.from(pdvs).sort((a,b)=>a.localeCompare(b, undefined, {numeric:true}));
     // populate using full dataset (allRows) to ensure all PDVs available
     const pdvSet = new Set();
-    for(const r of (allRows||[])) pdvSet.add(String(r.idComercial||'').trim() || '(sin PDV)');
+    for(const r of (allRows||[])) pdvSet.add(String(r.IDComercial||'').trim() || '(sin PDV)');
     const pdvArr = Array.from(pdvSet).sort((a,b)=>a.localeCompare(b, undefined, {numeric:true}));
     sel.innerHTML = '<option value="">PDV (todos)</option>' + pdvArr.map(v=>`<option value="${v}">${v}</option>`).join('');
     sel.value = selectedPdv || '';

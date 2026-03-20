@@ -5,11 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ventas Especiales · Copservir</title>
 <!-- Fonts & Icons -->
-
-<!-- ESTE ARCHIVO ES EL REPORTOR DE VENTAS ESPECIALES
-SE VISUALIZA LA TABLA Y DATOS DE LA CONSULTA SQL EJECUTADA EN LA BASE DE DATOS, CON UN DISEÑO MEJORADO Y MÁS INTERACTIVO. -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+<!-- Flatpickr - calendario moderno -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
+<!-- SheetJS for Excel export -->
+<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 <style>
 * {
     margin: 0;
@@ -19,7 +22,7 @@ SE VISUALIZA LA TABLA Y DATOS DE LA CONSULTA SQL EJECUTADA EN LA BASE DE DATOS, 
 }
 
 body {
-    background: linear-gradient(145deg, #f8fffb 0%, #97ebc0d6 100%);
+    background: linear-gradient(145deg, #f8fffb 0%, #e2f3e9 100%);
     display: flex;
 }
 
@@ -36,19 +39,16 @@ body {
 }
 
 .sidebar h2 {
-    font-size: 1.5rem;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    margin-bottom: 40px;
     display: flex;
     align-items: center;
-    gap: 8px;
-    color: #0a3b2e;
+    justify-content: center;
+    margin-bottom: 48px;
 }
 
-.sidebar h2 i {
-    color: #10b981;
-    font-size: 1.8rem;
+.sidebar h2 img {
+    max-height: 130px; /* realiza el tamaño deseado de la imagen del banner */
+    width: auto;
+    object-fit: contain;
 }
 
 .sidebar ul {
@@ -87,50 +87,105 @@ body {
     color: #0b7b5a;
 }
 
-.sidebar ul li a.nav-link{ color:inherit; text-decoration:none; display:flex; align-items:center; gap:14px }
+.sidebar ul li a.nav-link {
+    color: inherit;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+}
 
 /* MAIN */
 .main {
     flex: 1;
-    padding: 32px 36px;
+    padding: 28px 32px;
     overflow-x: auto;
 }
 
+/* TOPBAR */
 .topbar {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 30px;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
 }
 
-.filter-container {
+.filters-left {
     display: flex;
-    justify-content: flex-start;
     gap: 12px;
-    margin-bottom: 12px;
     align-items: center;
+    flex-wrap: wrap;
 }
 
-.filter-container select {
-    padding: 8px 10px;
-    border-radius: 8px;
-    border: 1px solid #d1e8d9;
+.filter-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
     background: white;
-    font-size: 0.95rem;
+    padding: 8px 16px;
+    border-radius: 48px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    transition: all 0.2s;
 }
 
-.filters-left { display:flex; gap:12px; align-items:center }
-.filter-pill{ display:inline-flex; align-items:center; gap:8px; background:#ffffff; padding:6px 10px; border-radius:12px; border:1px solid #e6f3ea; box-shadow:0 4px 10px rgba(0,30,10,0.02) }
-.filter-icon{ color:#6fa889; font-size:0.95rem }
-.filter-select{ border:0; background:transparent; font-size:0.95rem; padding:4px 6px; min-width:120px }
-.filter-select:focus{ outline:none }
+.filter-pill:hover {
+    border-color: #10b981;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.1);
+}
 
-.date-input{ border:0; background:transparent; font-size:0.95rem; padding:6px 8px; border-radius:8px }
-.date-input:focus{ outline:none; box-shadow: 0 6px 14px rgba(16,185,129,0.08); }
+.filter-icon {
+    color: #6b7280;
+    font-size: 0.9rem;
+}
 
+.filter-select {
+    border: none;
+    background: transparent;
+    font-size: 0.85rem;
+    padding: 4px 0;
+    min-width: 130px;
+    outline: none;
+    cursor: pointer;
+    color: #1f4034;
+    font-weight: 500;
+}
+
+/* Calendario */
+.date-range-picker {
+    border: none;
+    background: transparent;
+    font-size: 0.85rem;
+    padding: 4px 0;
+    cursor: pointer;
+    outline: none;
+    min-width: 180px;
+    font-weight: 500;
+    color: #1f4034;
+}
+
+.date-range-picker::placeholder {
+    color: #9ca3af;
+}
+
+.date-info-badge {
+    background: #f0fdf4;
+    color: #065f46;
+    font-size: 0.7rem;
+    padding: 4px 10px;
+    border-radius: 40px;
+    white-space: nowrap;
+    margin-left: 6px;
+}
+
+/* Search */
 .search-wrapper {
     position: relative;
-    width: 300px;
+    flex: 1;
+    min-width: 240px;
 }
 
 .search-wrapper i {
@@ -138,149 +193,168 @@ body {
     left: 16px;
     top: 50%;
     transform: translateY(-50%);
-    color: #8aa89c;
-    font-size: 1rem;
-    pointer-events: none;
+    color: #9ca3af;
+    font-size: 0.85rem;
 }
 
 .search {
     width: 100%;
-    padding: 14px 20px 14px 46px;
-    border-radius: 40px;
-    border: 1px solid #cbdcd0;
+    padding: 10px 16px 10px 42px;
+    border-radius: 48px;
+    border: 1px solid #e2e8f0;
     background: white;
-    font-size: 0.95rem;
-    box-shadow: 0 4px 10px rgba(0, 30, 10, 0.02);
-    transition: 0.2s;
+    font-size: 0.85rem;
+    outline: none;
+    transition: all 0.2s;
 }
 
 .search:focus {
-    outline: none;
     border-color: #10b981;
-    box-shadow: 0 8px 18px rgba(16, 185, 129, 0.15);
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+}
+
+/* Export button */
+.export-btn {
+    background: linear-gradient(135deg, #10b981 0%, #0d6b4a 100%);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 48px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s;
+}
+
+.export-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(16, 185, 129, 0.3);
 }
 
 /* BANNER */
 .banner {
     background: linear-gradient(112deg, #e6edea 0%, #0d6b4a 100%);
-    border-radius: 32px;
-    padding: 40px 48px;
+    border-radius: 28px;
+    padding: 28px 36px;
     color: white;
-    margin-bottom: 40px;
-    box-shadow: 0 20px 30px -10px rgba(10, 70, 40, 0.3);
+    margin-bottom: 28px;
     position: relative;
     overflow: hidden;
 }
 
 .banner::after {
-    content: url("https://res.cloudinary.com/dz7okl1ko/image/upload/v1752180853/5134606975890468276-removebg-preview_iskqsd.png");
-    font-size: 180px;
+    content: "";
     position: absolute;
-    bottom: -40px;
-    right: 20px;
-    opacity: 0.1;
-    color: #bef5d5;
-    transform: rotate(15deg);
-    font-weight: 700;
+    bottom: -30px;
+    right: -30px;
+    width: 160px;
+    height: 160px;
+    background: url("https://res.cloudinary.com/dz7okl1ko/image/upload/v1752180853/5134606975890468276-removebg-preview_iskqsd.png") no-repeat center;
+    background-size: contain;
+    opacity: 0.08;
+    pointer-events: none;
 }
 
-.banner h1 {
-    font-size: 42px;
+.banner-header {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-bottom: 16px;
+}
+
+.banner-header img {
+    height: 55px;
+
+}
+
+.banner-header h1 {
+    font-size: 32px;
     font-weight: 800;
     letter-spacing: -0.02em;
-    line-height: 1.1;
+    margin-bottom: 4px;
 }
 
-.banner p {
-    font-size: 1.3rem;
-    font-weight: 400;
+.banner-header p {
+    font-size: 0.9rem;
     opacity: 0.9;
-    margin-top: 12px;
 }
 
-/* CARDS INTERACTIVAS */
+.banner-date-range {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(8px);
+    padding: 8px 20px;
+    border-radius: 40px;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+/* CARDS */
 .cards {
     display: flex;
-    gap: 24px;
-    margin-bottom: 42px;
+    gap: 20px;
+    margin-bottom: 28px;
     flex-wrap: wrap;
 }
 
 .card {
     background: white;
     flex: 1 1 200px;
-    padding: 26px 24px;
-    border-radius: 28px;
-    box-shadow: 0 8px 24px rgba(0, 45, 20, 0.06);
-    transition: all 0.25s ease;
-    border: 1px solid rgba(0, 60, 30, 0.04);
-    display: flex;
-    flex-direction: column;
-    position: relative;
-    backdrop-filter: blur(2px);
+    padding: 20px 24px;
+    border-radius: 24px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+    transition: all 0.2s;
+    border: 1px solid #e6f3ea;
 }
 
 .card:hover {
-    transform: translateY(-8px);
-    box-shadow: 0 22px 35px -10px #1f8b5e50;
-    border-color: #c5f0da;
+    transform: translateY(-4px);
+    box-shadow: 0 12px 24px rgba(16, 185, 129, 0.12);
+    border-color: #10b981;
 }
 
 .card-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 14px;
+    margin-bottom: 12px;
 }
 
 .card-header i {
-    font-size: 2.4rem;
-    color: #0c8f5e;
-    background: #def7e8;
-    padding: 14px;
-    border-radius: 22px;
-    transition: 0.2s;
-}
-
-.card:hover .card-header i {
-    background: #b0ebd0;
-    color: #056b41;
-}
-
-.badge-today {
-    background: #fee2e2;
-    color: #991b1b;
-    font-size: 0.75rem;
-    font-weight: 700;
-    padding: 5px 12px;
-    border-radius: 60px;
-    box-shadow: 0 2px 6px rgba(239, 68, 68, 0.1);
+    font-size: 1.8rem;
+    color: #10b981;
+    background: #e8f5ef;
+    padding: 10px;
+    border-radius: 18px;
 }
 
 .card h3 {
-    font-size: 0.9rem;
+    font-size: 0.75rem;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.02em;
-    color: #597a6b;
-    margin-bottom: 6px;
+    letter-spacing: 0.03em;
+    color: #6b8f7e;
+    margin-bottom: 4px;
 }
 
 .card h2 {
-    font-size: 2.2rem;
+    font-size: 1.8rem;
     font-weight: 700;
     color: #173b2d;
     line-height: 1.2;
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
 }
 
 .card .trend {
-    font-size: 0.9rem;
-    font-weight: 600;
-    background: #e1f7ea;
-    padding: 4px 12px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    background: #e8f5ef;
+    padding: 4px 10px;
     border-radius: 40px;
     color: #0b714c;
     display: inline-flex;
@@ -289,108 +363,146 @@ body {
     margin-top: 12px;
 }
 
-/* TABLA MEJORADA */
+/* Active filters chips */
+.active-filters {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}
+
+.filter-chip {
+    background: #ecfdf5;
+    color: #065f46;
+    padding: 6px 14px;
+    border-radius: 40px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    border: 1px solid #d1fae5;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.clear-btn {
+    background: white;
+    border: 1px solid #d1fae5;
+    color: #065f46;
+    padding: 6px 14px;
+    border-radius: 40px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.clear-btn:hover {
+    background: #fef2e8;
+    border-color: #f97316;
+    color: #f97316;
+}
+
+/* TABLA */
 .table-container {
     background: white;
-    border-radius: 30px;
-    padding: 20px;
-    box-shadow: 0 25px 40px -18px #215d4040;
-    border: 1px solid rgba(70, 130, 100, 0.1);
+    border-radius: 24px;
+    padding: 0;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
     overflow-x: auto;
 }
 
 table {
     width: 100%;
-    border-collapse: separate;
-    border-spacing: 0 8px;
-}
-
-thead tr {
-    background: transparent;
+    border-collapse: collapse;
 }
 
 th {
     text-align: left;
-    padding: 18px 16px 10px 16px;
-    font-size: 0.8rem;
+    padding: 16px 14px;
+    font-size: 0.7rem;
     font-weight: 700;
-    color: #3c6e59;
+    color: #5c7c6b;
     text-transform: uppercase;
-    letter-spacing: 0.03em;
-    border-bottom: 2px solid #d3eee0;
-}
-
-tbody tr {
-    background: #ffffff;
-    border-radius: 20px;
-    transition: all 0.15s;
-    box-shadow: 0 4px 10px rgba(0, 30, 0, 0.02);
-}
-
-tbody tr:hover {
-    background: #f8fffc;
-    box-shadow: 0 10px 22px -8px #9bc5b2;
-    transform: scale(1.002);
+    letter-spacing: 0.05em;
+    border-bottom: 2px solid #e8f3ed;
+    background: #fafefc;
 }
 
 td {
-    padding: 16px;
-    font-size: 0.9rem;
+    padding: 14px;
+    font-size: 0.85rem;
     color: #1f4034;
-    border: none;
-    background-clip: padding-box;
+    border-bottom: 1px solid #f0f7f2;
 }
 
-tbody tr td:first-child {
-    border-top-left-radius: 18px;
-    border-bottom-left-radius: 18px;
-    font-weight: 600;
+tbody tr:hover {
+    background: #fafefc;
 }
 
-tbody tr td:last-child {
-    border-top-right-radius: 18px;
-    border-bottom-right-radius: 18px;
-}
-
-/* Badges para estado y tipo */
 .status-badge {
     background: #fef7da;
     color: #9e7300;
-    font-weight: 600;
     padding: 4px 12px;
     border-radius: 40px;
-    font-size: 0.8rem;
+    font-size: 0.7rem;
+    font-weight: 600;
     display: inline-block;
-    border: 1px solid #f5e2a9;
 }
 
 .cantidad-badge {
-    font-weight: 600;
     background: #eefcf3;
-    padding: 3px 8px;
+    padding: 4px 12px;
     border-radius: 40px;
+    font-size: 0.75rem;
+    font-weight: 600;
     display: inline-block;
-    font-size: 0.85rem;
 }
 
 .action-icons i {
     color: #709e8b;
-    margin: 0 8px 0 0;
     font-size: 1.1rem;
-    transition: 0.1s;
     cursor: pointer;
+    transition: all 0.2s;
 }
 
 .action-icons i:hover {
-    color: #0d6747;
+    color: #10b981;
     transform: scale(1.1);
+}
+
+/* Flatpickr estilos verdes */
+.flatpickr-calendar {
+    background: white;
+    border-radius: 20px;
+    box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.2);
+    border: 1px solid #d1fae5;
+}
+.flatpickr-day.selected, 
+.flatpickr-day.startRange, 
+.flatpickr-day.endRange {
+    background: #10b981 !important;
+    border-color: #10b981 !important;
+}
+.flatpickr-day.inRange {
+    background: #d1fae5 !important;
+    border-color: #d1fae5 !important;
+    color: #065f46 !important;
+}
+.flatpickr-day.today {
+    border-color: #10b981 !important;
 }
 
 /* Responsive */
 @media (max-width: 1000px) {
     .sidebar { display: none; }
     body { display: block; }
-    .main { padding: 20px; }
+    .main { padding: 16px; }
+    .topbar { flex-direction: column; align-items: stretch; }
+    .filters-left { flex-wrap: wrap; }
+    .search-wrapper { width: 100%; }
+    .export-btn { align-self: flex-end; }
+    .banner-header { flex-direction: column; text-align: center; }
 }
 </style>
 </head>
@@ -398,10 +510,12 @@ tbody tr td:last-child {
 
 <!-- SIDEBAR -->
 <div class="sidebar">
-    <h2><img src="https://res.cloudinary.com/dz7okl1ko/image/upload/v1752180853/5134606975890468276-removebg-preview_iskqsd.png" alt="Logo Copservir"></h2> 
+    <h2>
+        <img src="https://res.cloudinary.com/dz7okl1ko/image/upload/v1752180853/5134606975890468276-removebg-preview_iskqsd.png" alt="Copservir">
+    </h2>
     <ul>
         <li class="active"><i class="fas fa-file-alt"></i> Reportes</li>
-    <li><a class="nav-link" href="/dashboard"><i class="fas fa-chart-pie"></i> Dashboard</a></li>
+        <li><a class="nav-link" href="/dashboard"><i class="fas fa-chart-pie"></i> Dashboard</a></li>
         <li><i class="fas fa-users"></i> Clientes</li>
         <li><i class="fas fa-store"></i> Puntos de Venta</li>
     </ul>
@@ -410,73 +524,91 @@ tbody tr td:last-child {
 <!-- MAIN CONTENT -->
 <div class="main">
 
+    <!-- TOPBAR con filtros -->
     <div class="topbar">
         <div class="filters-left">
             <div class="filter-pill">
-                <i class="fas fa-store filter-icon" aria-hidden="true"></i>
-                <select id="idcomercial-select" class="filter-select" aria-label="Filtrar por PDV">
+                <i class="fas fa-store filter-icon"></i>
+                <select id="idcomercial-select" class="filter-select">
                     <option value="">Filtrar por PDV</option>
                 </select>
             </div>
             <div class="filter-pill">
-                <i class="fas fa-user filter-icon" aria-hidden="true"></i>
-                <select id="cliente-select" class="filter-select" aria-label="Filtrar por cliente">
+                <i class="fas fa-user filter-icon"></i>
+                <select id="cliente-select" class="filter-select">
                     <option value="">Filtrar Clientes</option>
                 </select>
             </div>
-            <div class="filter-pill" style="gap:6px;">
-                <i class="fas fa-calendar-alt filter-icon" aria-hidden="true"></i>
-                <input id="start-date" type="date" class="date-input" aria-label="Fecha inicio">
-                <span style="color:#c2daca;">—</span>
-                <input id="end-date" type="date" class="date-input" aria-label="Fecha fin">
+            <div class="filter-pill">
+                <i class="fas fa-calendar-alt filter-icon"></i>
+                <input type="text" id="date-range-picker" class="date-range-picker" placeholder="Seleccionar fechas" autocomplete="off">
+                <span id="date-info-badge" class="date-info-badge" style="display: none;">📅</span>
             </div>
         </div>
 
         <div class="search-wrapper">
             <i class="fas fa-search"></i>
-            <input id="search" type="text" class="search" placeholder="Buscar factura, cliente o producto..." aria-label="Buscar">
+            <input id="search" type="text" class="search" placeholder="Buscar factura, cliente o producto...">
+        </div>
+
+        <button id="export-xlsx-btn" class="export-btn">
+            <i class="fas fa-file-excel"></i> Exportar Excel
+        </button>
+    </div>
+
+    <!-- BANNER con logo integrado -->
+    <div class="banner">
+        <div class="banner-header">
+            <img src="https://res.cloudinary.com/dz7okl1ko/image/upload/v1752180853/5134606975890468276-removebg-preview_iskqsd.png" alt="Copservir">
+            <div>
+                <h1>VENTAS ESPECIALES</h1>
+                <p>En compras superiores al 60% del SMLV ($ 1.050.543)</p>
+            </div>
+        </div>
+        <div class="banner-date-range" id="banner-date-range">
+            <i class="fas fa-calendar-week"></i> Mostrando todos los datos
         </div>
     </div>
 
-    <div class="banner">
-    <img src="https://res.cloudinary.com/dz7okl1ko/image/upload/v1752180853/5134606975890468276-removebg-preview_iskqsd.png" alt="Logo Copservir"></a>
-        <h1>VENTAS ESPECIALES</h1>
-        <p>En compras superiores al 60% del SMLV ($ 1.050.543)</p>
-    </div>
-
-    <!-- CARDS con iconos interactivos -->
+    <!-- CARDS -->
     <div class="cards">
         <div class="card">
             <h3>Total Ventas Especiales</h3>
             <h2 id="total-ventas">$ 0</h2>
-            <span class="trend"><i class="fas fa-arrow-up"></i> vs. mes anterior</span>
+            <span class="trend"><i class="fas fa-arrow-up"></i> Total valor de las Ventas Especiales</span>
         </div>
         <div class="card">
             <h3>Cantidad de Facturas</h3>
             <h2 id="cantidad-facturas">0</h2>
-            <span class="trend"><i class="fas fa-calendar"></i> Cantidad de Facturas a la Fecha</span>
+            <span class="trend"><i class="fas fa-calendar"></i> Total de facturas en ventas especiales</span>
         </div>
         <div class="card">
             <h3>Clientes Frecuentes</h3>
-            <!-- contador visible -->
-            <h2 id="clientes-frecuentes-count">0<br><span style="font-size: 1rem; font-weight: 400; color: #658e7a;">activos</span></h2>
-            <!-- contenedor para el desplegable de clientes frecuentes -->
-            <div id="clientes-frecuentes-list" style="margin-top:8px;"></div>
-            <span class="trend"><i class="fas fa-star"></i> 20% más compras</span>
+            <h2 id="clientes-frecuentes-count">0</h2>
+            <div id="clientes-frecuentes-list" style="margin-top: 8px;"></div>
+            <span class="trend"><i class="fas fa-star"></i> más de 1 compra</span>
         </div>
         <div class="card">
-            <h3>Porcentaje sobre Total de las Ventas %</h3>
+            <h3>Porcentaje ante el Total</h3>
             <h2 id="porcentaje-sobre-total">0%</h2>
-            <span class="trend"><i class="fas fa-percentage"></i> del total de ventas</span>
+            <span class="trend"><i class="fas fa-chart-pie"></i> del total de ventas</span>
+        </div>
+        <div class="card">
+            <h3>Puntos de Venta</h3>
+            <h2 id="pdv-count">0</h2>
+            <span class="trend"><i class="fas fa-building"></i> Cantidad de PDV con facturas</span>
         </div>
     </div>
 
-    <!-- TABLA con estilo mejorado -->
+    <!-- FILTROS ACTIVOS -->
+    <div id="active-filters" class="active-filters"></div>
+
+    <!-- TABLA -->
     <div class="table-container">
         <table>
             <thead>
                 <tr>
-                    <th> PDV </th>
+                    <th>PDV</th>
                     <th>Factura</th>
                     <th>Cliente</th>
                     <th>Referencia</th>
@@ -490,7 +622,7 @@ tbody tr td:last-child {
                 </tr>
             </thead>
             <tbody id="tabla-body">
-                <tr><td colspan="10" style="text-align: center; padding: 40px;">Cargando datos...</td></tr>
+                <tr><td colspan="11" style="text-align: center; padding: 40px;">Cargando datos...</td></tr>
             </tbody>
         </table>
     </div>
@@ -498,20 +630,23 @@ tbody tr td:last-child {
 </div>
 
 <script>
-// JS: mantiene tu lógica original de base de datos
-const tablaBody = document.getElementById('tabla-body');
-const searchInput = document.getElementById('search');
+// ============================================================
+// CONFIGURACIÓN DE VARIABLES
+// ============================================================
 let allRows = [];
 let selectedIdComercial = '';
 let selectedCliente = '';
-// total global (base) obtenido desde /api/ventas — no cambia con filtros
-let baselineTotalAll = 0;
-// total resultante tras aplicar filtros en el cliente
-let filteredTotal = 0;
-// filtros de fecha (YYYY-MM-DD)
 let selectedStartDate = '';
 let selectedEndDate = '';
+let availableStartDate = '2026-01-01';
+let availableEndDate = '';
+let baselineTotalAll = 0;
+let filterTimeout = null;
+let datePicker = null;
 
+// ============================================================
+// FUNCIONES AUXILIARES
+// ============================================================
 function fmtMoney(v) {
     if (v === null || v === undefined || v === '') return '';
     const n = Number(v);
@@ -519,282 +654,372 @@ function fmtMoney(v) {
     return n.toLocaleString('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 }
 
-function render(rows) {
+// ============================================================
+// OBTENER RANGO DE FECHAS DISPONIBLE
+// ============================================================
+async function getAvailableDateRange() {
+    try {
+        const res = await fetch('/api/cache/date-range');
+        if (res.ok) {
+            const data = await res.json();
+            availableStartDate = data.start_date || '2026-01-01';
+            availableEndDate = data.end_date;
+            const badge = document.getElementById('date-info-badge');
+            if (badge && availableEndDate) {
+                badge.style.display = 'inline-block';
+                badge.innerHTML = `📅 hasta ${availableEndDate}`;
+            }
+        }
+    } catch(e) {
+        console.error('Error obteniendo rango de fechas:', e);
+    }
+}
+
+// ============================================================
+// INICIALIZAR CALENDARIO
+// ============================================================
+function initDatePicker() {
+    datePicker = flatpickr("#date-range-picker", {
+        mode: "range",
+        locale: "es",
+        dateFormat: "Y-m-d",
+        placeholder: "Seleccionar fechas",
+        maxDate: availableEndDate || new Date(),
+        minDate: availableStartDate,
+        onChange: function(selectedDates) {
+            if (selectedDates.length === 2) {
+                selectedStartDate = selectedDates[0].toISOString().split('T')[0];
+                selectedEndDate = selectedDates[1].toISOString().split('T')[0];
+            } else if (selectedDates.length === 1) {
+                selectedStartDate = selectedDates[0].toISOString().split('T')[0];
+                selectedEndDate = selectedStartDate;
+            } else {
+                selectedStartDate = '';
+                selectedEndDate = '';
+            }
+            updateBannerDateRange();
+            applyFilterFast();
+        }
+    });
+}
+
+function updateBannerDateRange() {
+    const bannerEl = document.getElementById('banner-date-range');
+    if (!bannerEl) return;
+    if (selectedStartDate && selectedEndDate && selectedStartDate === selectedEndDate) {
+        bannerEl.innerHTML = `<i class="fas fa-calendar-day"></i> ${selectedStartDate}`;
+    } else if (selectedStartDate && selectedEndDate) {
+        bannerEl.innerHTML = `<i class="fas fa-calendar-alt"></i> ${selectedStartDate} — ${selectedEndDate}`;
+    } else {
+        bannerEl.innerHTML = `<i class="fas fa-calendar-week"></i> Mostrando todos los datos`;
+    }
+}
+
+// ============================================================
+// FILTRO RÁPIDO
+// ============================================================
+function applyFilterFast() {
+    if (filterTimeout) clearTimeout(filterTimeout);
+    filterTimeout = setTimeout(() => {
+        applyFilter();
+    }, 50);
+}
+
+// ============================================================
+// FILTRO PRINCIPAL
+// ============================================================
+function applyFilter() {
+    const q = (document.getElementById('search').value || '').toLowerCase().trim();
+    let base = allRows;
+    
+    if (selectedIdComercial) {
+        base = base.filter(r => String(r.IDComercial) === selectedIdComercial);
+    }
+    if (selectedCliente) {
+        base = base.filter(r => String(r.NumeroDocumentoCliente) === selectedCliente);
+    }
+    if (selectedStartDate && selectedEndDate) {
+        const startTs = new Date(selectedStartDate + 'T00:00:00').getTime();
+        const endTs = new Date(selectedEndDate + 'T23:59:59').getTime();
+        base = base.filter(r => {
+            const dateStr = r.Fecha;
+            if (!dateStr) return false;
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return false;
+            const t = d.getTime();
+            return t >= startTs && t <= endTs;
+        });
+    }
+    
+    if (q) {
+        base = base.filter(r => 
+            (r.IDComercial || '').toString().toLowerCase().includes(q) ||
+            (r.NumeroFactura || '').toString().toLowerCase().includes(q) ||
+            (r.NumeroDocumentoCliente || '').toString().toLowerCase().includes(q) ||
+            (r.NombreProducto || '').toString().toLowerCase().includes(q) ||
+            (r.Refe || '').toString().toLowerCase().includes(q)
+        );
+    }
+    
+    renderTable(base);
+    updateCards(base);
+    updateFrequentClients(base);
+    renderActiveFilters();
+}
+
+// ============================================================
+// RENDER TABLA
+// ============================================================
+function renderTable(rows) {
+    const tbody = document.getElementById('tabla-body');
     if (!rows || rows.length === 0) {
-        tablaBody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:40px;">No hay registros.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; padding:40px;">No hay registros con los filtros seleccionados.</td></tr>';
+        window.lastRenderedRows = [];
         return;
     }
     
     const html = rows.map(r => {
-        // Formato de cantidad (unidades + fracciones)
         let cantidad = '';
-        if (r.CantidadUnidades !== undefined && r.CantidadUnidades !== null) {
+        if (r.CantidadUnidades) {
             cantidad = r.CantidadUnidades.toString();
-            if (r.CantidadFracciones && r.CantidadFracciones !== '0' && r.CantidadFracciones !== 0) {
+            if (r.CantidadFracciones && r.CantidadFracciones !== '0') {
                 cantidad += ',' + r.CantidadFracciones;
             }
         }
         
-        // Formato de fecha
-        let fechaFormateada = r.Fecha || '';
+        let fechaFormateada = '';
         if (r.Fecha) {
             try {
                 const fecha = new Date(r.Fecha);
                 if (!isNaN(fecha.getTime())) {
-                    fechaFormateada = fecha.toLocaleString('es-CO', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric'
-                    });
+                    fechaFormateada = fecha.toLocaleDateString('es-CO');
                 }
-            } catch (e) {
-                // Si hay error, dejamos el valor original
-            }
+            } catch(e) {}
         }
         
         return `<tr>
-            <td>${r.idComercial || ''}</td>
-            <td><b>${r.NumeroFactura || ''}</b></td>
+            <td>${r.IDComercial || ''}</td>
+            <td><strong>${r.NumeroFactura || ''}</strong></td>
             <td>${r.NumeroDocumentoCliente || ''}</td>
             <td>${r.Refe || ''}</td>
             <td>${r.NombreProducto || ''}</td>
             <td><span class="cantidad-badge">${cantidad || '0'}</span></td>
             <td>${fmtMoney(r.ValorTotal)}</td>
             <td>${fmtMoney(r.Total)}</td>
-            <td><span class="status-badge">${r.TipoVentaDescripcion || ''} · </span></td>
+            <td><span class="status-badge">${r.TipoVentaDescripcion || ''}</span></td>
             <td>${fechaFormateada}</td>
             <td class="action-icons">
-                <i class="far fa-eye" title="Ver detalle" onclick="viewFile('${(r.NombreFactura||'').replace(/'/g, "\\'" )}')"></i>
+                <i class="far fa-eye" title="Ver PDF" onclick="viewFile('${(r.NombreFactura || '').replace(/'/g, "\\'")}')"></i>
             </td>
         </tr>`;
     }).join('');
     
-    tablaBody.innerHTML = html;
+    tbody.innerHTML = html;
+    window.lastRenderedRows = rows;
 }
 
-function updateFrequentClients(rows){
-    // Calcula clientes que tienen más de una factura (conteo de facturas únicas por NumeroDocumentoCliente)
+// ============================================================
+// ACTUALIZAR CARDS
+// ============================================================
+function updateCards(rows) {
+    const invoiceMap = new Map();
+    rows.forEach(r => {
+        const nf = (r.NumeroFactura || '').toString().trim();
+        if (nf && !invoiceMap.has(nf)) {
+            const val = r.Total;
+            invoiceMap.set(nf, { total: isNaN(Number(val)) ? 0 : Number(val) });
+        }
+    });
+    const sum = Array.from(invoiceMap.values()).reduce((a,b) => a + b.total, 0);
+    const count = invoiceMap.size;
+    
+    document.getElementById('total-ventas').innerText = fmtMoney(sum);
+    document.getElementById('cantidad-facturas').innerText = count;
+    
+    const pdvSet = new Set();
+    rows.forEach(r => { if (r.IDComercial) pdvSet.add(String(r.IDComercial)); });
+    document.getElementById('pdv-count').innerText = pdvSet.size;
+    
+    const pct = baselineTotalAll ? (sum / baselineTotalAll) * 100 : 0;
+    document.getElementById('porcentaje-sobre-total').innerText = pct >= 10 ? Math.round(pct) + '%' : pct.toFixed(1) + '%';
+}
+
+// ============================================================
+// CLIENTES FRECUENTES
+// ============================================================
+function updateFrequentClients(rows) {
     const countEl = document.getElementById('clientes-frecuentes-count');
     const listContainer = document.getElementById('clientes-frecuentes-list');
-    if(!countEl || !listContainer) return;
-    if(!rows || rows.length === 0){
-        countEl.innerHTML = `0<br><span style="font-size: 1rem; font-weight: 400; color: #658e7a;">activos</span>`;
-        listContainer.innerHTML = '';
-        return;
-    }
+    if (!countEl || !listContainer) return;
+    
     const map = new Map();
     rows.forEach(r => {
         const client = (r.NumeroDocumentoCliente || '').toString().trim();
         const factura = (r.NumeroFactura || '').toString().trim();
-        if(!client || !factura) return;
-        if(!map.has(client)) map.set(client, new Set());
-        map.get(client).add(factura);
+        if (client && factura) {
+            if (!map.has(client)) map.set(client, new Set());
+            map.get(client).add(factura);
+        }
     });
-    const frequent = Array.from(map.entries()).map(([client,set])=>({client, count: set.size})).filter(x=>x.count>1).sort((a,b)=>b.count-a.count);
-    const count = frequent.length;
-    countEl.innerHTML = `${count}<br><span style="font-size: 1rem; font-weight: 400; color: #658e7a;">activos</span>`;
-    if(count === 0){
+    
+    const frequent = Array.from(map.entries())
+        .map(([client, set]) => ({ client, count: set.size }))
+        .filter(x => x.count > 1)
+        .sort((a, b) => b.count - a.count);
+    
+    countEl.innerHTML = frequent.length;
+    
+    if (frequent.length === 0) {
         listContainer.innerHTML = '';
         return;
     }
-    // crear un select desplegable para evitar amontonamiento
-    const options = frequent.slice(0,50).map(f => `<option value="${f.client}">${f.client} (${f.count})</option>`).join('');
-    const selectHtml = `<select id="frequent-clients-select" class="filter-select" aria-label="Clientes frecuentes"><option value="">Seleccionar cliente</option>${options}</select>`;
-    listContainer.innerHTML = selectHtml;
+    
+    const options = frequent.slice(0, 30).map(f => `<option value="${f.client}">${f.client} (${f.count})</option>`).join('');
+    listContainer.innerHTML = `<select id="frequent-clients-select" class="filter-select" style="width:100%; font-size:0.8rem;"><option value="">Seleccionar cliente frecuente</option>${options}</select>`;
+    
     const sel = document.getElementById('frequent-clients-select');
-    if(sel){
-        sel.onchange = ()=>{
+    if (sel) {
+        sel.onchange = () => {
             selectedCliente = sel.value || '';
-            // sincronizar con el select principal de clientes si existe
-            const main = document.getElementById('cliente-select');
-            if(main){ main.value = selectedCliente; }
-            applyFilter();
+            const mainSelect = document.getElementById('cliente-select');
+            if (mainSelect) mainSelect.value = selectedCliente;
+            applyFilterFast();
         };
     }
 }
 
-function populateIdComercialSelect(rows){
+// ============================================================
+// POBLAR SELECTS
+// ============================================================
+function populateIdComercialSelect(rows) {
     const sel = document.getElementById('idcomercial-select');
-    if(!sel) return;
-    // obtener valores únicos
+    if (!sel) return;
     const set = new Set();
-    (rows||[]).forEach(r=>{
-        if(r && r.idComercial !== undefined && r.idComercial !== null){
-            set.add(String(r.idComercial));
-        }
-    });
-    const arr = Array.from(set).sort((a,b)=>a.localeCompare(b, undefined, {numeric:true}));
-    // limpiar opciones excepto la primera
-    sel.innerHTML = '<option value="">Filtrar por PDV</option>' + arr.map(v=>`<option value="${v}">${v}</option>`).join('');
-    // mantener selección si existe
-    if(selectedIdComercial){
-        sel.value = selectedIdComercial;
-    }
-    // use onchange to avoid duplicate listeners when repopulating
-    sel.onchange = ()=>{
-        selectedIdComercial = sel.value || '';
-        applyFilter();
-    };
+    rows.forEach(r => { if (r.IDComercial) set.add(String(r.IDComercial)); });
+    const arr = Array.from(set).sort();
+    sel.innerHTML = '<option value="">Filtrar por PDV</option>' + arr.map(v => `<option value="${v}">${v}</option>`).join('');
+    if (selectedIdComercial) sel.value = selectedIdComercial;
+    sel.onchange = () => { selectedIdComercial = sel.value || ''; applyFilterFast(); };
 }
 
-function populateClienteSelect(rows){
+function populateClienteSelect(rows) {
     const sel = document.getElementById('cliente-select');
-    if(!sel) return;
+    if (!sel) return;
     const set = new Set();
-    (rows||[]).forEach(r=>{
-        if(r && r.NumeroDocumentoCliente !== undefined && r.NumeroDocumentoCliente !== null){
-            set.add(String(r.NumeroDocumentoCliente));
-        }
-    });
-    const arr = Array.from(set).sort((a,b)=>a.localeCompare(b, undefined, {numeric:true}));
-    sel.innerHTML = '<option value="">Filtar por Cliente</option>' + arr.map(v=>`<option value="${v}">${v}</option>`).join('');
-    if(selectedCliente){ sel.value = selectedCliente }
-    sel.onchange = ()=>{ selectedCliente = sel.value || ''; applyFilter(); };
+    rows.forEach(r => { if (r.NumeroDocumentoCliente) set.add(String(r.NumeroDocumentoCliente)); });
+    const arr = Array.from(set).sort();
+    sel.innerHTML = '<option value="">Filtrar Clientes</option>' + arr.map(v => `<option value="${v}">${v}</option>`).join('');
+    if (selectedCliente) sel.value = selectedCliente;
+    sel.onchange = () => { selectedCliente = sel.value || ''; applyFilterFast(); };
 }
 
-// Inicializar listeners de fecha
-const startDateInput = document.getElementById('start-date');
-const endDateInput = document.getElementById('end-date');
-if(startDateInput){
-    startDateInput.addEventListener('change', ()=>{
-        selectedStartDate = startDateInput.value || '';
-        applyFilter();
-    });
-}
-if(endDateInput){
-    endDateInput.addEventListener('change', ()=>{
-        selectedEndDate = endDateInput.value || '';
-        applyFilter();
-    });
-}
-
-function updateCards(rows){
-    // calcular sum_total_unique_facturas y distinct count por NumeroFactura
-    const uniques = new Map();
-    (rows||[]).forEach(r=>{
-        const nf = (r.NumeroFactura||'').toString().trim();
-        if(!nf) return;
-        if(!uniques.has(nf)){
-            const val = r.Total;
-            const num = (val===null||val===undefined||val==='')?0:Number(val);
-            uniques.set(nf, isNaN(num)?0:num);
-        }
-    });
-    const sum = Array.from(uniques.values()).reduce((a,b)=>a+b,0);
-    const count = uniques.size;
-    const totalEl = document.getElementById('total-ventas');
-    const countEl = document.getElementById('cantidad-facturas');
-    if(totalEl) totalEl.innerText = fmtMoney(sum);
-    if(countEl) countEl.innerText = count;
-    // almacenar total filtrado y actualizar porcentaje relativo al total global
-    filteredTotal = sum;
-    updatePercentageCard();
-}
-
-function updatePercentageCard(){
-    const el = document.getElementById('porcentaje-sobre-total');
-    if(!el) return;
-    if(!baselineTotalAll || baselineTotalAll === 0){
-        el.innerText = '0%';
-        return;
+// ============================================================
+// FILTROS ACTIVOS Y LIMPIAR
+// ============================================================
+function renderActiveFilters() {
+    const el = document.getElementById('active-filters');
+    if (!el) return;
+    const chips = [];
+    if (selectedStartDate && selectedEndDate) {
+        chips.push(`<span class="filter-chip"><i class="fas fa-calendar"></i> ${selectedStartDate} — ${selectedEndDate}</span>`);
     }
-    const pct = (filteredTotal / baselineTotalAll) * 100;
-    const formatted = pct >= 10 ? Math.round(pct) + '%' : pct.toFixed(1) + '%';
-    el.innerText = formatted;
+    if (selectedIdComercial) chips.push(`<span class="filter-chip"><i class="fas fa-store"></i> ${selectedIdComercial}</span>`);
+    if (selectedCliente) chips.push(`<span class="filter-chip"><i class="fas fa-user"></i> ${selectedCliente}</span>`);
+    if (chips.length) {
+        chips.push(`<button class="clear-btn" onclick="clearAllFiltersFast()"><i class="fas fa-times"></i> Limpiar todo</button>`);
+    }
+    el.innerHTML = chips.join(' ');
 }
 
+function clearAllFiltersFast() {
+    selectedStartDate = '';
+    selectedEndDate = '';
+    selectedIdComercial = '';
+    selectedCliente = '';
+    
+    if (datePicker) datePicker.clear();
+    
+    const pdvSelect = document.getElementById('idcomercial-select');
+    if (pdvSelect) pdvSelect.value = '';
+    const clientSelect = document.getElementById('cliente-select');
+    if (clientSelect) clientSelect.value = '';
+    const searchInput = document.getElementById('search');
+    if (searchInput) searchInput.value = '';
+    
+    updateBannerDateRange();
+    applyFilterFast();
+}
+
+// ============================================================
+// FETCH DATA
+// ============================================================
 async function fetchData() {
-    try{
-        const res = await fetch('/api/ventas');
-        if(!res.ok) throw new Error('HTTP '+res.status);
+    try {
+        const res = await fetch('/api/cache/rows');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         const j = await res.json();
         allRows = j.rows || [];
-        // guardar el total global único (provisto por el backend)
         baselineTotalAll = Number(j.sum_total_unique_facturas) || 0;
+        
         populateIdComercialSelect(allRows);
         populateClienteSelect(allRows);
-        // actualizar métricas en las cards
-        const totalEl = document.getElementById('total-ventas');
-        const countEl = document.getElementById('cantidad-facturas');
-        if (j.sum_total_unique_facturas !== undefined && totalEl) {
-            totalEl.innerText = fmtMoney(j.sum_total_unique_facturas);
-        }
-        if (j.distinct_facturas_count !== undefined && countEl) {
-            countEl.innerText = j.distinct_facturas_count;
-        }
         applyFilter();
-    }catch(e){
-        tablaBody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:40px; color:#991b1b;">
-            <center><i class="fas fa-exclamation-circle"></i> Error cargando datos: ${e.message}</center>
-        </td></tr>`;
+    } catch (e) {
+        document.getElementById('tabla-body').innerHTML = `<tr><td colspan="11" style="text-align:center; padding:40px; color:#991b1b;">Error: ${e.message}</td></tr>`;
     }
 }
 
-function applyFilter() {
-    const q = (searchInput.value || '').toLowerCase().trim();
-    // primero filtrar por idComercial si hay selección
-    let base = allRows;
-    if(selectedIdComercial){
-        base = (allRows||[]).filter(r => String(r.idComercial) === String(selectedIdComercial));
-    }
-    // luego filtrar por cliente si está seleccionado
-    if(selectedCliente){
-        base = (base||[]).filter(r => String(r.NumeroDocumentoCliente) === String(selectedCliente));
-    }
-    // luego filtrar por rango de fechas si se han seleccionado
-    if(selectedStartDate || selectedEndDate){
-        const startTs = selectedStartDate ? (new Date(selectedStartDate + 'T00:00:00')).getTime() : null;
-        const endTs = selectedEndDate ? (new Date(selectedEndDate + 'T23:59:59.999')).getTime() : null;
-        base = (base||[]).filter(r => {
-            const dateStr = r.Fecha || r.FechaHora || r.FechaHora;
-            if(!dateStr) return false;
-            const d = new Date(dateStr);
-            if(isNaN(d.getTime())) return false;
-            const t = d.getTime();
-            if(startTs !== null && t < startTs) return false;
-            if(endTs !== null && t > endTs) return false;
-            return true;
-        });
-    }
-    if(!q){
-        render(base);
-        updateFrequentClients(base);
-        updateCards(base);
+// ============================================================
+// EXPORTAR EXCEL
+// ============================================================
+function downloadExportXLSX() {
+    const rows = window.lastRenderedRows || allRows;
+    if (!rows || rows.length === 0) {
+        alert('No hay datos para exportar');
         return;
     }
-    const filtered = (base||[]).filter(r => 
-        (r.idComercial || '').toString().toLowerCase().includes(q) ||
-        (r.NumeroFactura || '').toString().toLowerCase().includes(q) ||
-        (r.NumeroDocumentoCliente || '').toString().toLowerCase().includes(q) ||
-        (r.NombreProducto || '').toString().toLowerCase().includes(q) ||
-        (r.Refe || '').toString().toLowerCase().includes(q)
-    );
-    render(filtered);
-    updateFrequentClients(filtered);
-    updateCards(filtered);
+    const sheetData = rows.map(r => ({
+        'PDV': r.IDComercial || '',
+        'NumeroFactura': r.NumeroFactura || '',
+        'Cliente': r.NumeroDocumentoCliente || '',
+        'Referencia': r.Refe || '',
+        'Producto': r.NombreProducto || '',
+        'CantidadUnidades': r.CantidadUnidades || '',
+        'CantidadFracciones': r.CantidadFracciones || '',
+        'ValorDescuento': r.ValorDescuento || '',
+        'ValorTotalLinea': r.ValorTotal || '',
+        'TotalFactura': r.Total || '',
+        'TipoVenta': r.TipoVentaDescripcion || '',
+        'Fecha': r.Fecha || '',
+        'NombreFactura': r.NombreFactura || ''
+    }));
+    const ws = XLSX.utils.json_to_sheet(sheetData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Ventas');
+    const now = new Date();
+    const filename = `ventas-${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2,'0')}-${now.getDate().toString().padStart(2,'0')}.xlsx`;
+    XLSX.writeFile(wb, filename);
 }
 
-searchInput.addEventListener('input', applyFilter);
+// ============================================================
+// VIEW FILE
+// ============================================================
+function viewFile(nombre) {
+    if (!nombre) return alert('Nombre de factura no disponible');
+    window.open('/file/view?nombre=' + encodeURIComponent(nombre), '_blank');
+}
 
-// Auto-refresh cada 60s (manteniendo tu lógica)
-fetchData();
-setInterval(fetchData, 60000);
+// ============================================================
+// INICIALIZACIÓN
+// ============================================================
+document.addEventListener('DOMContentLoaded', async () => {
+    await getAvailableDateRange();
+    initDatePicker();
+    fetchData();
+    setInterval(fetchData, 60000);
+    document.getElementById('export-xlsx-btn').addEventListener('click', downloadExportXLSX);
+    document.getElementById('search').addEventListener('input', applyFilterFast);
+});
 </script>
-
-<script>
-function viewFile(nombre){
-    if(!nombre) return alert('Nombre de factura desconocido');
-    const url = '/file/view?nombre=' + encodeURIComponent(nombre);
-    window.open(url, '_blank');
-}
-
-function downloadFile(nombre){
-    if(!nombre) return alert('Nombre de factura desconocido');
-    const url = '/file/download?nombre=' + encodeURIComponent(nombre);
-    // Forzar descarga abriendo en nueva pestaña
-    window.open(url, '_blank');
-}
-</script>
-
 </body>
 </html>
