@@ -18,6 +18,10 @@
   <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
   <!-- Font Awesome (icons used in sidebar to match index.html) -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <!-- Flatpickr - calendario moderno (rango de fechas) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
   <style>
     /* Base font to match index.html */
     body, input, select, button { font-family: 'Inter', sans-serif; }
@@ -92,15 +96,17 @@
         <p class="text-sm text-gray-600">Resumen de KPIs, PDV top y distribución por tipo de venta.</p>
       </div>
       <div class="flex items-center gap-3">
-        <div class="filter-pill" style="gap:6px;">
+        <div class="filter-pill">
           <i class="fas fa-calendar-alt filter-icon" aria-hidden="true"></i>
-          <input id="start-date" type="date" class="date-input" aria-label="Fecha inicio">
-          <span style="color:#c2daca;">—</span>
-          <input id="end-date" type="date" class="date-input" aria-label="Fecha fin">
+          <input type="text" id="date-range-picker" class="date-range-picker" placeholder="Seleccionar fechas" autocomplete="off">
+          <span id="date-info-badge" class="date-info-badge" style="display: none;">📅</span>
         </div>
         <select id="idcomercial-filter" class="px-3 py-2 border rounded-md">
-          <option value="">PDV (todos)</option>
+          <option value="">PDV </option>
         </select>
+          <select id="tipo-filter" class="px-3 py-2 border rounded-md" onfocus="populateTipoFilter()">
+            <option value="">Tipo de Venta </option>
+          </select>
         <button id="refresh-btn" class="bg-green-600 text-white px-4 py-2 rounded-md">Refrescar</button>
         <div class="ml-4 active-filters" id="active-filters"></div>
       </div>
@@ -205,6 +211,7 @@
       baselineTotal = Number(j.sum_total_unique_facturas) || 0;
       // populate PDV filter from full dataset once
       populatePDVFilter();
+      populateTipoFilter();
       // apply current filters (dates, pdv) on the fetched rows
       applyFilters();
     }catch(e){
@@ -231,6 +238,10 @@
     // filter by PDV if selected
     if(selectedPdv){
       rows = rows.filter(r => ((String(r.IDComercial||'').trim() || '(sin PDV)') === selectedPdv));
+    }
+    // filter by Tipo de Venta if selected
+    if (selectedTipo) {
+      rows = rows.filter(r => ((String(r.TipoVentaDescripcion||r.TipoVenta||'')).trim() === selectedTipo));
     }
     // build invoicesMap from the filtered rows (one entry per NumeroFactura)
     invoicesMap = new Map();
@@ -288,9 +299,12 @@
     selectedEndDate = '';
     selectedPdv = '';
     selectedTipo = '';
-    const sd = document.getElementById('start-date'); if(sd) sd.value = '';
-    const ed = document.getElementById('end-date'); if(ed) ed.value = '';
+    // if using the single date-range picker, clear it
+    try{ if(typeof datePicker !== 'undefined' && datePicker && datePicker.clear) datePicker.clear(); }
+    catch(e){}
+    const sd = document.getElementById('date-range-picker'); if(sd) sd.value = '';
     const sel = document.getElementById('idcomercial-filter'); if(sel) sel.value = '';
+    const tsel = document.getElementById('tipo-filter'); if(tsel) tsel.value = '';
     applyFilters();
   }
 
@@ -469,7 +483,8 @@
         const label = chartTipoVenta.data.labels[idx];
         if(selectedTipo === label) selectedTipo = '';
         else selectedTipo = label;
-        // apply selectedTipo as additional filter
+        // reflect selection in the tipo select (if present) and apply filter
+        try{ const s = document.getElementById('tipo-filter'); if(s) s.value = selectedTipo; }catch(e){}
         applyFilters();
       }
     };
@@ -485,9 +500,23 @@
     const pdvSet = new Set();
     for(const r of (allRows||[])) pdvSet.add(String(r.IDComercial||'').trim() || '(sin PDV)');
     const pdvArr = Array.from(pdvSet).sort((a,b)=>a.localeCompare(b, undefined, {numeric:true}));
-    sel.innerHTML = '<option value="">PDV (todos)</option>' + pdvArr.map(v=>`<option value="${v}">${v}</option>`).join('');
+    sel.innerHTML = '<option value="">PDV </option>' + pdvArr.map(v=>`<option value="${v}">${v}</option>`).join('');
     sel.value = selectedPdv || '';
     sel.onchange = ()=>{ selectedPdv = sel.value || ''; applyFilters(); };
+  }
+
+  function populateTipoFilter(){
+    const sel = document.getElementById('tipo-filter');
+    if(!sel) return;
+    const tipoSet = new Set();
+    for(const r of (allRows||[])){
+      const t = (r.TipoVentaDescripcion || r.TipoVenta || '').toString().trim();
+      if(t) tipoSet.add(t);
+    }
+    const arr = Array.from(tipoSet).sort((a,b)=>a.localeCompare(b, undefined, {numeric:false}));
+    sel.innerHTML = '<option value="">Tipo de Venta </option>' + arr.map(v=>`<option value="${v}">${v}</option>`).join('');
+    sel.value = selectedTipo || '';
+    sel.onchange = ()=>{ selectedTipo = sel.value || ''; applyFilters(); };
   }
 
   function filterByPDVAndRender(pdvValue){
@@ -563,13 +592,34 @@
 
   // events
   document.getElementById('refresh-btn').addEventListener('click', fetchData);
-  // date inputs -> apply filters client-side
-  const sdInput = document.getElementById('start-date');
-  const edInput = document.getElementById('end-date');
-  if(sdInput){ sdInput.addEventListener('change', ()=>{ selectedStartDate = sdInput.value || ''; applyFilters(); }); }
-  if(edInput){ edInput.addEventListener('change', ()=>{ selectedEndDate = edInput.value || ''; applyFilters(); }); }
+
+  // Initialize a single date-range picker (flatpickr) and wire it to applyFilters()
+  let datePicker = null;
+  function initDatePicker(){
+    if(typeof flatpickr === 'undefined') return;
+    datePicker = flatpickr("#date-range-picker", {
+      mode: "range",
+      locale: "es",
+      dateFormat: "Y-m-d",
+      onChange: function(selectedDates){
+        if(selectedDates.length === 2){
+          selectedStartDate = selectedDates[0].toISOString().split('T')[0];
+          selectedEndDate = selectedDates[1].toISOString().split('T')[0];
+        } else if(selectedDates.length === 1){
+          selectedStartDate = selectedDates[0].toISOString().split('T')[0];
+          selectedEndDate = selectedStartDate;
+        } else {
+          selectedStartDate = '';
+          selectedEndDate = '';
+        }
+        applyFilters();
+      }
+    });
+  }
 
   // auto-refresh on load and every 60s
+  // Initialize date picker before the first fetch so the component is ready
+  try{ initDatePicker(); }catch(e){ /* ignore init errors */ }
   fetchData();
   setInterval(fetchData, 60000);
   </script>

@@ -466,9 +466,25 @@ tbody tr:hover {
     transition: all 0.2s;
 }
 
-.action-icons i:hover {
+.action-icons i.icon-available:hover {
     color: #10b981;
     transform: scale(1.1);
+}
+
+/* Icon states for PDF availability */
+.action-icons i.icon-available {
+    color: #10b981; /* green */
+    cursor: pointer;
+}
+.action-icons i.icon-available:focus {
+    outline: 2px solid rgba(16,185,129,0.25);
+    outline-offset: 2px;
+}
+.action-icons i.icon-missing {
+    color: #9ca3af; /* grey */
+    cursor: default;
+    opacity: 0.6;
+    pointer-events: none; /* prevent hover/click */
 }
 
 /* Flatpickr estilos verdes */
@@ -537,6 +553,12 @@ tbody tr:hover {
                 <i class="fas fa-user filter-icon"></i>
                 <select id="cliente-select" class="filter-select">
                     <option value="">Filtrar Clientes</option>
+                </select>
+            </div>
+            <div class="filter-pill">
+                <i class="fas fa-tags filter-icon"></i>
+                <select id="tipo-select" class="filter-select" onfocus="populateTipoSelect()">
+                    <option value="">Tipo de Venta </option>
                 </select>
             </div>
             <div class="filter-pill">
@@ -636,6 +658,7 @@ tbody tr:hover {
 let allRows = [];
 let selectedIdComercial = '';
 let selectedCliente = '';
+let selectedTipo = '';
 let selectedStartDate = '';
 let selectedEndDate = '';
 let availableStartDate = '2026-01-01';
@@ -643,6 +666,13 @@ let availableEndDate = '';
 let baselineTotalAll = 0;
 let filterTimeout = null;
 let datePicker = null;
+
+// Performance helpers
+let pdvIndex = new Map(); // PDV -> array of rows
+let clientIndex = new Map(); // Cliente -> array of rows
+let rowsPerPage = 200; // how many rows to render per page
+let currentPage = 1;
+let lastFilteredBase = [];
 
 // ============================================================
 // FUNCIONES AUXILIARES
@@ -730,14 +760,22 @@ function applyFilterFast() {
 // ============================================================
 function applyFilter() {
     const q = (document.getElementById('search').value || '').toLowerCase().trim();
-    let base = allRows;
+    // Use indexes to quickly narrow the base set
+    let base = null;
+    if (selectedIdComercial && pdvIndex.has(selectedIdComercial)) {
+        base = pdvIndex.get(selectedIdComercial).slice();
+    }
+    if (selectedCliente && clientIndex.has(selectedCliente)) {
+        if (base === null) {
+            base = clientIndex.get(selectedCliente).slice();
+        } else {
+            // intersect base and client list by reference
+            const clientSet = new Set(clientIndex.get(selectedCliente));
+            base = base.filter(r => clientSet.has(r));
+        }
+    }
+    if (base === null) base = allRows;
     
-    if (selectedIdComercial) {
-        base = base.filter(r => String(r.IDComercial) === selectedIdComercial);
-    }
-    if (selectedCliente) {
-        base = base.filter(r => String(r.NumeroDocumentoCliente) === selectedCliente);
-    }
     if (selectedStartDate && selectedEndDate) {
         const startTs = new Date(selectedStartDate + 'T00:00:00').getTime();
         const endTs = new Date(selectedEndDate + 'T23:59:59').getTime();
@@ -760,8 +798,20 @@ function applyFilter() {
             (r.Refe || '').toString().toLowerCase().includes(q)
         );
     }
-    
-    renderTable(base);
+
+    // filter by Tipo de Venta if selected
+    if (selectedTipo) {
+        base = base.filter(r => ((r.TipoVentaDescripcion || r.TipoVenta || '') + '').toString().trim() === selectedTipo);
+    }
+
+    // remember full filtered base so exports can include all matching rows
+    lastFilteredBase = base.slice();
+
+    // render only a page worth of rows to avoid DOM slowness
+    const startIdx = 0;
+    const endIdx = Math.min(base.length, rowsPerPage * currentPage);
+    const pageRows = base.slice(startIdx, endIdx);
+    renderTable(pageRows, base.length);
     updateCards(base);
     updateFrequentClients(base);
     renderActiveFilters();
@@ -770,7 +820,7 @@ function applyFilter() {
 // ============================================================
 // RENDER TABLA
 // ============================================================
-function renderTable(rows) {
+function renderTable(rows, totalCount) {
     const tbody = document.getElementById('tabla-body');
     if (!rows || rows.length === 0) {
         tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; padding:40px;">No hay registros con los filtros seleccionados.</td></tr>';
@@ -797,6 +847,11 @@ function renderTable(rows) {
             } catch(e) {}
         }
         
+        const safeName = (r.NombreFactura || '').replace(/'/g, "\\'");
+        const eyeIcon = (r.pdf_exists)
+            ? `<i class="far fa-eye icon-available" role="button" tabindex="0" title="Ver PDF" onclick="viewFile('${safeName}')" onkeydown="if(event.key==='Enter'){viewFile('${safeName}')}" aria-label="Ver factura"></i>`
+            : `<i class="far fa-eye icon-missing" role="img" aria-disabled="true" tabindex="-1" title="No hay PDF disponible" aria-label="No disponible"></i>`;
+
         return `<tr>
             <td>${r.IDComercial || ''}</td>
             <td><strong>${r.NumeroFactura || ''}</strong></td>
@@ -809,13 +864,31 @@ function renderTable(rows) {
             <td><span class="status-badge">${r.TipoVentaDescripcion || ''}</span></td>
             <td>${fechaFormateada}</td>
             <td class="action-icons">
-                <i class="far fa-eye" title="Ver PDF" onclick="viewFile('${(r.NombreFactura || '').replace(/'/g, "\\'")}')"></i>
+                ${eyeIcon}
             </td>
         </tr>`;
     }).join('');
     
     tbody.innerHTML = html;
     window.lastRenderedRows = rows;
+
+    // Add a load more row if there are more rows than currently displayed
+    const total = typeof totalCount === 'number' ? totalCount : (allRows ? allRows.length : 0);
+    const shown = rows.length;
+    const existingMore = document.getElementById('load-more-row');
+    if (existingMore) existingMore.remove();
+    if (shown < total) {
+        const moreTr = document.createElement('tr');
+        moreTr.id = 'load-more-row';
+        const td = document.createElement('td');
+        td.colSpan = 11;
+        td.style.textAlign = 'center';
+        td.style.padding = '12px';
+        td.innerHTML = `<button id=\"load-more-btn\" class=\"export-btn\" style=\"background:linear-gradient(135deg,#10b981 0%,#0d6b4a 100%); padding:8px 14px;\">Cargar más (${Math.min(total-shown, rowsPerPage)})</button>`;
+        moreTr.appendChild(td);
+        tbody.appendChild(moreTr);
+        document.getElementById('load-more-btn').onclick = loadMoreRows;
+    }
 }
 
 // ============================================================
@@ -894,23 +967,34 @@ function updateFrequentClients(rows) {
 function populateIdComercialSelect(rows) {
     const sel = document.getElementById('idcomercial-select');
     if (!sel) return;
-    const set = new Set();
-    rows.forEach(r => { if (r.IDComercial) set.add(String(r.IDComercial)); });
-    const arr = Array.from(set).sort();
+    const arr = Array.from(pdvIndex.keys()).sort((a,b)=>a.localeCompare(b, undefined, {numeric:true}));
     sel.innerHTML = '<option value="">Filtrar por PDV</option>' + arr.map(v => `<option value="${v}">${v}</option>`).join('');
     if (selectedIdComercial) sel.value = selectedIdComercial;
-    sel.onchange = () => { selectedIdComercial = sel.value || ''; applyFilterFast(); };
+    sel.onchange = () => { selectedIdComercial = sel.value || ''; resetPagination(); applyFilterFast(); };
 }
 
 function populateClienteSelect(rows) {
     const sel = document.getElementById('cliente-select');
     if (!sel) return;
-    const set = new Set();
-    rows.forEach(r => { if (r.NumeroDocumentoCliente) set.add(String(r.NumeroDocumentoCliente)); });
-    const arr = Array.from(set).sort();
+    const arr = Array.from(clientIndex.keys()).sort((a,b)=>a.localeCompare(b, undefined, {numeric:true}));
     sel.innerHTML = '<option value="">Filtrar Clientes</option>' + arr.map(v => `<option value="${v}">${v}</option>`).join('');
     if (selectedCliente) sel.value = selectedCliente;
-    sel.onchange = () => { selectedCliente = sel.value || ''; applyFilterFast(); };
+    sel.onchange = () => { selectedCliente = sel.value || ''; resetPagination(); applyFilterFast(); };
+}
+
+function populateTipoSelect() {
+    const sel = document.getElementById('tipo-select');
+    if (!sel) return;
+    // Build unique list of TipoVentaDescripcion from allRows
+    const tipoSet = new Set();
+    for (const r of (allRows || [])) {
+        const t = (r.TipoVentaDescripcion || r.TipoVenta || '').toString().trim();
+        if (t) tipoSet.add(t);
+    }
+    const arr = Array.from(tipoSet).sort((a,b)=>a.localeCompare(b, undefined, {numeric:false}));
+    sel.innerHTML = '<option value="">Tipo de Venta </option>' + arr.map(v=>`<option value="${v}">${v}</option>`).join('');
+    if (selectedTipo) sel.value = selectedTipo;
+    sel.onchange = () => { selectedTipo = sel.value || ''; resetPagination(); applyFilterFast(); };
 }
 
 // ============================================================
@@ -925,6 +1009,7 @@ function renderActiveFilters() {
     }
     if (selectedIdComercial) chips.push(`<span class="filter-chip"><i class="fas fa-store"></i> ${selectedIdComercial}</span>`);
     if (selectedCliente) chips.push(`<span class="filter-chip"><i class="fas fa-user"></i> ${selectedCliente}</span>`);
+    if (selectedTipo) chips.push(`<span class="filter-chip"><i class="fas fa-tags"></i> ${selectedTipo}</span>`);
     if (chips.length) {
         chips.push(`<button class="clear-btn" onclick="clearAllFiltersFast()"><i class="fas fa-times"></i> Limpiar todo</button>`);
     }
@@ -936,6 +1021,7 @@ function clearAllFiltersFast() {
     selectedEndDate = '';
     selectedIdComercial = '';
     selectedCliente = '';
+    selectedTipo = '';
     
     if (datePicker) datePicker.clear();
     
@@ -943,6 +1029,7 @@ function clearAllFiltersFast() {
     if (pdvSelect) pdvSelect.value = '';
     const clientSelect = document.getElementById('cliente-select');
     if (clientSelect) clientSelect.value = '';
+    const tipoSelect = document.getElementById('tipo-select'); if (tipoSelect) tipoSelect.value = '';
     const searchInput = document.getElementById('search');
     if (searchInput) searchInput.value = '';
     
@@ -960,20 +1047,51 @@ async function fetchData() {
         const j = await res.json();
         allRows = j.rows || [];
         baselineTotalAll = Number(j.sum_total_unique_facturas) || 0;
-        
-        populateIdComercialSelect(allRows);
-        populateClienteSelect(allRows);
+
+        // build fast lookup indexes to speed up filtering on the client
+        buildIndexes(allRows);
+        populateIdComercialSelect();
+        populateClienteSelect();
+        populateTipoSelect();
+        resetPagination();
         applyFilter();
     } catch (e) {
         document.getElementById('tabla-body').innerHTML = `<tr><td colspan="11" style="text-align:center; padding:40px; color:#991b1b;">Error: ${e.message}</td></tr>`;
     }
 }
 
+function buildIndexes(rows) {
+    pdvIndex.clear();
+    clientIndex.clear();
+    if (!rows || rows.length === 0) return;
+    for (const r of rows) {
+        const pdv = (r.IDComercial || '').toString();
+        const client = (r.NumeroDocumentoCliente || '').toString();
+        if (pdv) {
+            if (!pdvIndex.has(pdv)) pdvIndex.set(pdv, []);
+            pdvIndex.get(pdv).push(r);
+        }
+        if (client) {
+            if (!clientIndex.has(client)) clientIndex.set(client, []);
+            clientIndex.get(client).push(r);
+        }
+    }
+}
+
+function resetPagination() {
+    currentPage = 1;
+}
+
+function loadMoreRows() {
+    currentPage += 1;
+    applyFilter();
+}
+
 // ============================================================
 // EXPORTAR EXCEL
 // ============================================================
 function downloadExportXLSX() {
-    const rows = window.lastRenderedRows || allRows;
+    const rows = (lastFilteredBase && lastFilteredBase.length) ? lastFilteredBase : (window.lastRenderedRows || allRows);
     if (!rows || rows.length === 0) {
         alert('No hay datos para exportar');
         return;

@@ -684,9 +684,7 @@ def list_months():
 
 @app.route('/api/cache/rows')
 def api_cache_rows():
-    """Devuelve las filas combinadas desde las bases SQLite (fixed + recent).
-    Parámetros opcionales: start, end (fechas en formato 'YYYY-MM-DD' o 'YYYY-MM-DD HH:MM:SS'), limit (int).
-    """
+    """Devuelve las filas combinadas desde las bases SQLite (fixed + recent)."""
     if get_combined_rows is None:
         return jsonify({'error': 'Cache no disponible'}), 404
 
@@ -700,7 +698,7 @@ def api_cache_rows():
         app.logger.exception('Error leyendo cache combinada: %s', e)
         return jsonify({'error': str(e)}), 500
 
-    # Calcular suma de Totales por factura única (como hace /api/ventas)
+    # Calcular suma de Totales por factura única
     unique_totals = {}
     seen = set()
     for r in rows:
@@ -723,11 +721,48 @@ def api_cache_rows():
     sum_total_unique = sum(unique_totals.values())
     distinct_count = len(unique_totals)
 
+    # Agregar indicador de existencia de PDF localmente
+    # Ahora usando la función mejorada que solo retorna True si hay coincidencia exacta
+    try:
+        for r in rows:
+            nombre = r.get('NombreFactura') or ''
+            # Buscar coincidencia exacta
+            path = _find_best_file_match(nombre)
+            r['pdf_exists'] = bool(path and os.path.isfile(path))
+    except Exception as e:
+        app.logger.error(f"Error verificando PDFs: {e}")
+        for r in rows:
+            r['pdf_exists'] = False
+
     return jsonify({
         'count': len(rows),
         'distinct_facturas_count': distinct_count,
         'sum_total_unique_facturas': sum_total_unique,
         'rows': rows
+    })
+    
+@app.route('/api/debug/check-pdf')
+def debug_check_pdf():
+    """Endpoint para depurar la coincidencia de PDFs"""
+    nombre = request.args.get('nombre')
+    if not nombre:
+        return jsonify({'error': 'Se requiere nombre'}), 400
+    
+    path = _find_best_file_match(nombre)
+    exists = bool(path and os.path.isfile(path))
+    
+    # Listar algunos archivos de la carpeta para comparar
+    try:
+        files = os.listdir(FILES_DIR)[:20]
+    except:
+        files = []
+    
+    return jsonify({
+        'nombre_buscado': nombre,
+        'nombre_normalizado': nombre.lower().replace('.pdf', ''),
+        'archivo_encontrado': path,
+        'pdf_exists': exists,
+        'archivos_en_carpeta': files
     })
 
 
@@ -788,48 +823,35 @@ def refresh_fixed_all_months():
 
 # Funciones para manejo de archivos PDF (sin cambios)
 def _find_best_file_match(nombre):
-    import difflib
+    """
+    Busca el archivo PDF que coincida exactamente con el nombre proporcionado.
+    Retorna la ruta completa si existe, None si no existe.
+    """
     if not nombre:
         return None
-    target = os.path.splitext(nombre)[0].lower()
+    
+    # Normalizar el nombre: eliminar extensión si está presente y convertir a minúsculas
+    target_name = nombre.lower()
+    if target_name.endswith('.pdf'):
+        target_name = target_name[:-4]
+    
     try:
         files = os.listdir(FILES_DIR)
     except Exception:
         return None
-
+    
+    # Buscar coincidencia EXACTA (ignorando mayúsculas/minúsculas)
     for f in files:
-        if f.lower() == nombre.lower() or f.lower() == (nombre.lower().rstrip('.pdf')):
+        # Normalizar el nombre del archivo (sin extensión)
+        file_name = f.lower()
+        if file_name.endswith('.pdf'):
+            file_name = file_name[:-4]
+        
+        # Coincidencia exacta
+        if file_name == target_name:
             return os.path.join(FILES_DIR, f)
-
-    candidates = []
-    for f in files:
-        base = os.path.splitext(f)[0].lower()
-        if target in base or base in target:
-            candidates.append(os.path.join(FILES_DIR, f))
-    if len(candidates) == 1:
-        return candidates[0]
-    elif len(candidates) > 1:
-        best = None
-        best_ratio = 0.0
-        for p in candidates:
-            base = os.path.splitext(os.path.basename(p))[0].lower()
-            r = difflib.SequenceMatcher(None, target, base).ratio()
-            if r > best_ratio:
-                best_ratio = r
-                best = p
-        if best_ratio > 0.4:
-            return best
-
-    best = None
-    best_ratio = 0.0
-    for f in files:
-        base = os.path.splitext(f)[0].lower()
-        r = difflib.SequenceMatcher(None, target, base).ratio()
-        if r > best_ratio:
-            best_ratio = r
-            best = os.path.join(FILES_DIR, f)
-    if best_ratio > 0.45:
-        return best
+    
+    # Si no hay coincidencia exacta, retornar None (no mostrar icono verde)
     return None
 
 @app.route('/api/cache/refresh/fixed/day')
