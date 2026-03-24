@@ -291,7 +291,6 @@ body {
     backdrop-filter: blur(8px);
     padding: 8px 20px;
     border-radius: 40px;
-    font-size: 0.85rem;
     font-weight: 500;
 }
 
@@ -729,8 +728,16 @@ function initDatePicker() {
             }
             updateBannerDateRange();
             applyFilterFast();
+            saveFiltersToStorage();
         }
     });
+    // If we loaded filters from storage before init, set the dates visually
+    if (selectedStartDate && datePicker && typeof datePicker.setDate === 'function') {
+        try {
+            if (selectedEndDate) datePicker.setDate([selectedStartDate, selectedEndDate]);
+            else datePicker.setDate(selectedStartDate);
+        } catch (e) { /* ignore */ }
+    }
 }
 
 function updateBannerDateRange() {
@@ -970,7 +977,7 @@ function populateIdComercialSelect(rows) {
     const arr = Array.from(pdvIndex.keys()).sort((a,b)=>a.localeCompare(b, undefined, {numeric:true}));
     sel.innerHTML = '<option value="">Filtrar por PDV</option>' + arr.map(v => `<option value="${v}">${v}</option>`).join('');
     if (selectedIdComercial) sel.value = selectedIdComercial;
-    sel.onchange = () => { selectedIdComercial = sel.value || ''; resetPagination(); applyFilterFast(); };
+    sel.onchange = () => { selectedIdComercial = sel.value || ''; resetPagination(); applyFilterFast(); saveFiltersToStorage(); };
 }
 
 function populateClienteSelect(rows) {
@@ -979,7 +986,7 @@ function populateClienteSelect(rows) {
     const arr = Array.from(clientIndex.keys()).sort((a,b)=>a.localeCompare(b, undefined, {numeric:true}));
     sel.innerHTML = '<option value="">Filtrar Clientes</option>' + arr.map(v => `<option value="${v}">${v}</option>`).join('');
     if (selectedCliente) sel.value = selectedCliente;
-    sel.onchange = () => { selectedCliente = sel.value || ''; resetPagination(); applyFilterFast(); };
+    sel.onchange = () => { selectedCliente = sel.value || ''; resetPagination(); applyFilterFast(); saveFiltersToStorage(); };
 }
 
 function populateTipoSelect() {
@@ -994,7 +1001,36 @@ function populateTipoSelect() {
     const arr = Array.from(tipoSet).sort((a,b)=>a.localeCompare(b, undefined, {numeric:false}));
     sel.innerHTML = '<option value="">Tipo de Venta </option>' + arr.map(v=>`<option value="${v}">${v}</option>`).join('');
     if (selectedTipo) sel.value = selectedTipo;
-    sel.onchange = () => { selectedTipo = sel.value || ''; resetPagination(); applyFilterFast(); };
+    sel.onchange = () => { selectedTipo = sel.value || ''; resetPagination(); applyFilterFast(); saveFiltersToStorage(); };
+}
+
+// ============================================================
+// Persistir / recuperar filtros en localStorage para sincronizar entre páginas
+// ============================================================
+function saveFiltersToStorage(){
+    try{
+        const obj = {
+            startDate: selectedStartDate || '',
+            endDate: selectedEndDate || '',
+            pdv: selectedIdComercial || '',
+            cliente: selectedCliente || '',
+            tipo: selectedTipo || ''
+        };
+        localStorage.setItem('veFilters', JSON.stringify(obj));
+    }catch(e){/* ignore */}
+}
+
+function loadFiltersFromStorage(){
+    try{
+        const s = localStorage.getItem('veFilters');
+        if(!s) return;
+        const obj = JSON.parse(s);
+        selectedStartDate = obj.startDate || '';
+        selectedEndDate = obj.endDate || '';
+        selectedIdComercial = obj.pdv || '';
+        selectedCliente = obj.cliente || '';
+        selectedTipo = obj.tipo || '';
+    }catch(e){/* ignore */}
 }
 
 // ============================================================
@@ -1032,6 +1068,7 @@ function clearAllFiltersFast() {
     const tipoSelect = document.getElementById('tipo-select'); if (tipoSelect) tipoSelect.value = '';
     const searchInput = document.getElementById('search');
     if (searchInput) searchInput.value = '';
+    saveFiltersToStorage();
     
     updateBannerDateRange();
     applyFilterFast();
@@ -1050,11 +1087,26 @@ async function fetchData() {
 
         // build fast lookup indexes to speed up filtering on the client
         buildIndexes(allRows);
+        // Load persisted filters (if user filtered on another page)
+        loadFiltersFromStorage();
         populateIdComercialSelect();
         populateClienteSelect();
         populateTipoSelect();
         resetPagination();
         applyFilter();
+
+        // Trigger server-side CSV generation/updating for missing PDFs
+        // This will create/overwrite `missing_pdfs.csv` in the parent folder of FILES_DIR
+        try {
+            fetch('/api/cache/generate-missing-pdfs').then(r => {
+                if (!r.ok) console.warn('generar CSV missing-pdfs fallo', r.status);
+                return r.json().catch(()=>null);
+            }).then(j => {
+                if (j) console.log('missing_pdfs generated', j.count, j.path);
+            }).catch(e => console.warn('error generando missing-pdfs CSV', e));
+        } catch (e) {
+            console.warn('error iniciando petición para missing-pdfs', e);
+        }
     } catch (e) {
         document.getElementById('tabla-body').innerHTML = `<tr><td colspan="11" style="text-align:center; padding:40px; color:#991b1b;">Error: ${e.message}</td></tr>`;
     }
@@ -1132,7 +1184,10 @@ function viewFile(nombre) {
 // ============================================================
 document.addEventListener('DOMContentLoaded', async () => {
     await getAvailableDateRange();
+    // load filters stored from other page (if any) before initializing the picker
+    loadFiltersFromStorage();
     initDatePicker();
+    // apply stored PDV/tipo/etc after data loads
     fetchData();
     setInterval(fetchData, 60000);
     document.getElementById('export-xlsx-btn').addEventListener('click', downloadExportXLSX);

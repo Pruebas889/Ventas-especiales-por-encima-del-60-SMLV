@@ -74,6 +74,46 @@
     .sidebar ul li.active i, .sidebar ul li:hover i { color: #0b7b5a; }
     .sidebar ul li a.nav-link{ color:inherit; text-decoration:none; display:flex; align-items:center; gap:14px }
     @media (max-width: 1000px) { .sidebar { display: none } }
+      /* Date-range picker styles (match index.html) */
+      .date-range-picker {
+        border: none;
+        background: transparent;
+        font-size: 0.85rem;
+        padding: 4px 0;
+        cursor: pointer;
+        outline: none;
+        min-width: 180px;
+        font-weight: 500;
+        color: #1f4034;
+      }
+
+      .date-range-picker::placeholder {
+        color: #9ca3af;
+      }
+
+      .date-info-badge {
+        background: #f0fdf4;
+        color: #065f46;
+        font-size: 0.7rem;
+        padding: 4px 10px;
+        border-radius: 40px;
+        white-space: nowrap;
+        margin-left: 6px;
+      }
+
+      /* Flatpickr green theme adjustments */
+      .flatpickr-day.selected,
+      .flatpickr-day.startRange,
+      .flatpickr-day.endRange {
+        background: #10b981 !important;
+        border-color: #10b981 !important;
+      }
+      .flatpickr-day.inRange {
+        background: #d1fae5 !important;
+        border-color: #d1fae5 !important;
+        color: #065f46 !important;
+      }
+      .flatpickr-day.today { border-color: #10b981 !important; }
   </style>
 </head>
 <body class="bg-gray-50 text-gray-800">
@@ -194,6 +234,8 @@
   let baselineTotal = 0; // from backend
   let selectedStartDate = '';
   let selectedEndDate = '';
+  let availableStartDate = '2026-01-01';
+  let availableEndDate = '';
   let selectedPdv = '';
   let selectedTipo = '';
 
@@ -210,6 +252,8 @@
       allRows = j.rows || [];
       baselineTotal = Number(j.sum_total_unique_facturas) || 0;
       // populate PDV filter from full dataset once
+      // load persisted filters (from index or previous dashboard session)
+      loadFiltersFromStorage();
       populatePDVFilter();
       populateTipoFilter();
       // apply current filters (dates, pdv) on the fetched rows
@@ -305,6 +349,7 @@
     const sd = document.getElementById('date-range-picker'); if(sd) sd.value = '';
     const sel = document.getElementById('idcomercial-filter'); if(sel) sel.value = '';
     const tsel = document.getElementById('tipo-filter'); if(tsel) tsel.value = '';
+    saveFiltersToStorage();
     applyFilters();
   }
 
@@ -502,7 +547,70 @@
     const pdvArr = Array.from(pdvSet).sort((a,b)=>a.localeCompare(b, undefined, {numeric:true}));
     sel.innerHTML = '<option value="">PDV </option>' + pdvArr.map(v=>`<option value="${v}">${v}</option>`).join('');
     sel.value = selectedPdv || '';
-    sel.onchange = ()=>{ selectedPdv = sel.value || ''; applyFilters(); };
+    sel.onchange = ()=>{ selectedPdv = sel.value || ''; saveFiltersToStorage(); applyFilters(); };
+  }
+
+  // Persistir / recuperar filtros en localStorage para sincronizar entre páginas
+  function saveFiltersToStorage(){
+    try{
+      const obj = {
+        startDate: selectedStartDate || '',
+        endDate: selectedEndDate || '',
+        pdv: selectedPdv || '',
+        tipo: selectedTipo || ''
+      };
+      localStorage.setItem('veFilters', JSON.stringify(obj));
+    }catch(e){/* ignore */}
+  }
+
+  function loadFiltersFromStorage(){
+    try{
+      const s = localStorage.getItem('veFilters');
+      if(!s) return;
+      const obj = JSON.parse(s);
+      selectedStartDate = obj.startDate || '';
+      selectedEndDate = obj.endDate || '';
+      selectedPdv = obj.pdv || '';
+      selectedTipo = obj.tipo || '';
+    }catch(e){/* ignore */}
+  }
+
+  // ============================================================
+  // OBTENER RANGO DE FECHAS DISPONIBLE SEGUN LOS DATOS EN CACHE (para mostrarlo en el banner y limitar el datepicker)
+  // ============================================================
+  async function getAvailableDateRange() {
+    try {
+      const res = await fetch('/api/cache/date-range');
+      if (res.ok) {
+        const data = await res.json();
+        availableStartDate = data.start_date || '2026-01-01';
+        availableEndDate = data.end_date || '';
+        const badge = document.getElementById('date-info-badge');
+        if (badge && availableEndDate) {
+          badge.style.display = 'inline-block';
+          badge.innerHTML = `📅 hasta ${availableEndDate}`;
+        }
+      }
+    } catch (e) {
+      console.error('Error obteniendo rango de fechas:', e);
+    }
+  }
+
+  function updateBannerDateRange() {
+    const bannerEl = document.getElementById('banner-total');
+    // For dashboard we show date summary in the active filters area as well
+    const badge = document.getElementById('date-info-badge');
+    if (!badge) return;
+    if (selectedStartDate && selectedEndDate && selectedStartDate === selectedEndDate) {
+      badge.innerHTML = `📅 ${selectedStartDate}`;
+    } else if (selectedStartDate && selectedEndDate) {
+      badge.innerHTML = `📅 ${selectedStartDate} — ${selectedEndDate}`;
+    } else if (availableEndDate) {
+      badge.innerHTML = `📅 hasta ${availableEndDate}`;
+    } else {
+      badge.innerHTML = '';
+      badge.style.display = 'none';
+    }
   }
 
   function populateTipoFilter(){
@@ -516,7 +624,7 @@
     const arr = Array.from(tipoSet).sort((a,b)=>a.localeCompare(b, undefined, {numeric:false}));
     sel.innerHTML = '<option value="">Tipo de Venta </option>' + arr.map(v=>`<option value="${v}">${v}</option>`).join('');
     sel.value = selectedTipo || '';
-    sel.onchange = ()=>{ selectedTipo = sel.value || ''; applyFilters(); };
+    sel.onchange = ()=>{ selectedTipo = sel.value || ''; saveFiltersToStorage(); applyFilters(); };
   }
 
   function filterByPDVAndRender(pdvValue){
@@ -601,6 +709,9 @@
       mode: "range",
       locale: "es",
       dateFormat: "Y-m-d",
+      minDate: availableStartDate || null,
+      maxDate: availableEndDate || new Date(),
+      placeholder: "Seleccionar fechas",
       onChange: function(selectedDates){
         if(selectedDates.length === 2){
           selectedStartDate = selectedDates[0].toISOString().split('T')[0];
@@ -612,16 +723,44 @@
           selectedStartDate = '';
           selectedEndDate = '';
         }
+        updateBannerDateRange();
+        saveFiltersToStorage();
         applyFilters();
       }
     });
+    // If stored dates exist, set them visually
+    if (selectedStartDate && datePicker && typeof datePicker.setDate === 'function') {
+      try{
+        if (selectedEndDate) datePicker.setDate([selectedStartDate, selectedEndDate]);
+        else datePicker.setDate(selectedStartDate);
+      }catch(e){}
+    }
   }
 
   // auto-refresh on load and every 60s
-  // Initialize date picker before the first fetch so the component is ready
-  try{ initDatePicker(); }catch(e){ /* ignore init errors */ }
-  fetchData();
-  setInterval(fetchData, 60000);
+  // Initialize date picker after obtaining available date range so limits are correct
+  try{
+    // Load persisted filters first so the picker and selects can reflect them
+    loadFiltersFromStorage();
+    getAvailableDateRange().then(()=>{
+      try{ initDatePicker(); }catch(e){ /* ignore init errors */ }
+      // ensure datepicker shows stored dates (initDatePicker attempts this too)
+      if (selectedStartDate && typeof datePicker !== 'undefined' && datePicker) {
+        try{ if (selectedEndDate) datePicker.setDate([selectedStartDate, selectedEndDate]); else datePicker.setDate(selectedStartDate); }catch(e){}
+      }
+      fetchData();
+      setInterval(fetchData, 60000);
+    }).catch(err => {
+      console.error('getAvailableDateRange failed', err);
+      try{ initDatePicker(); }catch(e){}
+      fetchData();
+      setInterval(fetchData, 60000);
+    });
+  }catch(e){
+    try{ initDatePicker(); }catch(e){}
+    fetchData();
+    setInterval(fetchData, 60000);
+  }
   </script>
 </body>
 </html>

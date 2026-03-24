@@ -1,5 +1,6 @@
 from flask import Flask, render_template, jsonify, g, request, send_file, abort
 import os
+import csv
 from datetime import datetime, timedelta, date, timezone
 from datetime import date, timezone  # Asegúrate de importar timezone
 import mysql.connector
@@ -764,6 +765,62 @@ def debug_check_pdf():
         'pdf_exists': exists,
         'archivos_en_carpeta': files
     })
+
+
+@app.route('/api/cache/generate-missing-pdfs', methods=['GET', 'POST'])
+def api_generate_missing_pdfs():
+    # """
+    # Genera/actualiza un archivo CSV con los nombres de factura (NombreFactura)
+    # para aquellos PDFs que NO se encuentran en la carpeta local `FILES_DIR`.
+
+    # El CSV se escribe en el directorio padre de `FILES_DIR` (por ejemplo,
+    # C:\Users\ymongui\Documents\missing_pdfs.csv). El archivo se sobrescribe
+    # en cada ejecución para evitar duplicados.
+
+    # Parámetros opcionales (query string o body): start, end (filtros de fecha)
+    # que serán pasados a `get_combined_rows` si existe.
+    # """
+    if get_combined_rows is None:
+        return jsonify({'status': 'error', 'message': 'Cache DB not available (get_combined_rows missing)'}), 500
+
+    start = request.values.get('start')
+    end = request.values.get('end')
+
+    try:
+        rows = get_combined_rows(start=start, end=end)
+    except Exception as e:
+        app.logger.error(f"Error obteniendo filas para generar CSV: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+    missing = set()
+    for r in rows:
+        nombre = (r.get('NombreFactura') or '').strip()
+        if not nombre:
+            continue
+        # Si no existe archivo exacto, _find_best_file_match devuelve None
+        path = _find_best_file_match(nombre)
+        if not path or not os.path.isfile(path):
+            # Normalizar para evitar duplicados por espacios
+            missing.add(nombre)
+
+    # Directorio destino: carpeta padre de FILES_DIR (ej: C:\Users\ymongui\Documents)
+    try:
+        out_dir = os.path.abspath(os.path.join(FILES_DIR, '..'))
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(out_dir, 'missing_pdfs.csv')
+
+        # Escribir CSV (sobrescribir) con BOM utf-8 para que Excel lo reconozca bien
+        with open(out_path, 'w', encoding='utf-8-sig', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['NombreFactura'])
+            for nombre in sorted(missing):
+                writer.writerow([nombre])
+
+        sample = list(sorted(missing))[:50]
+        return jsonify({'status': 'ok', 'path': out_path, 'count': len(missing), 'sample': sample})
+    except Exception as e:
+        app.logger.error(f"Error escribiendo CSV: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
 @app.route('/api/cache/refresh/fixed/weekly')
