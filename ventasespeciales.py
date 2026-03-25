@@ -2,7 +2,7 @@ from flask import Flask, render_template, jsonify, g, request, send_file, abort
 import os
 import csv
 from datetime import datetime, timedelta, date, timezone
-from datetime import date, timezone  # Asegúrate de importar timezone
+from datetime import date, timezone
 import mysql.connector
 from mysql.connector import Error
 import logging
@@ -40,8 +40,98 @@ DB_CONFIG = {
 }
 
 FILES_DIR = r"C:\facturas"
+FILES_FALTANTES = r"C:\facturas_faltantes\facturas_faltantes.csv.txt"
 
-FILES_FALTANTES = r"C:\facturas faltantes\facturas_faltantes.csv"
+# ========== OPTIMIZACIÓN DE PDFs ==========
+# Cache for file name lookup to avoid repeated os.listdir calls
+# Structure: {'ts': <last refresh timestamp>, 'map': {normalized_name: full_path}}
+FILES_SET_CACHE = {'ts': 0, 'map': {}}
+
+def refresh_files_cache(force=False, ttl_seconds=300):  # TTL de 5 minutos por defecto
+    """
+    Refresh and return a mapping normalized_name -> full_path for PDFs in FILES_DIR.
+    If not force and cache is recent (within ttl_seconds), return cached map.
+    """
+    try:
+        now = time.time()
+    except Exception:
+        now = 0
+
+    if (not force) and FILES_SET_CACHE.get('ts', 0) and (now - FILES_SET_CACHE['ts'] < ttl_seconds):
+        return FILES_SET_CACHE['map']
+
+    files_map = {}
+    try:
+        entries = os.listdir(FILES_DIR)
+        logging.info(f"🔄 Escaneando directorio de PDFs: {len(entries)} archivos totales")
+        
+        for f in entries:
+            if not f or not isinstance(f, str):
+                continue
+            if f.lower().endswith('.pdf'):
+                name = f[:-4].lower().strip()
+                # Keep first encountered path for the normalized name
+                if name not in files_map:
+                    files_map[name] = os.path.join(FILES_DIR, f)
+        
+        logging.info(f"✅ Cache de PDFs actualizado: {len(files_map)} archivos PDF encontrados")
+        
+    except Exception as e:
+        logging.error(f"Error escaneando directorio de PDFs: {e}")
+        files_map = FILES_SET_CACHE.get('map', {})
+
+    FILES_SET_CACHE['map'] = files_map
+    FILES_SET_CACHE['ts'] = now
+    return files_map
+
+def _find_best_file_match(nombre):
+    """
+    Busca el archivo PDF que coincida exactamente con el nombre proporcionado.
+    Usa caché para evitar escaneos repetidos del directorio.
+    Retorna la ruta completa si existe, None si no existe.
+    """
+    if not nombre:
+        return None
+    
+    # Normalizar el nombre: eliminar extensión si está presente y convertir a minúsculas
+    target_name = nombre.lower()
+    if target_name.endswith('.pdf'):
+        target_name = target_name[:-4]
+    
+    # Use cached files map for fast lookup
+    try:
+        files_map = refresh_files_cache()  # Usa TTL de 5 minutos
+    except Exception:
+        files_map = {}
+
+    # Direct lookup by normalized name
+    found = files_map.get(target_name)
+    if found and os.path.isfile(found):
+        return found
+
+    # If not found in the cached map, try one more time forcing a refresh (rare)
+    try:
+        files_map = refresh_files_cache(force=True, ttl_seconds=0)
+        found = files_map.get(target_name)
+        if found and os.path.isfile(found):
+            return found
+    except Exception:
+        pass
+
+    return None
+
+# Endpoint para forzar refresco de la caché de PDFs
+@app.route('/api/cache/refresh-files')
+def api_refresh_files_cache():
+    """Forzar refresco de la lista de PDFs en FILES_DIR y devolver conteo."""
+    try:
+        files_map = refresh_files_cache(force=True, ttl_seconds=0)
+        return jsonify({'status': 'ok', 'count': len(files_map)})
+    except Exception as e:
+        app.logger.error(f"Error refrescando cache de archivos: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+# ========== FIN OPTIMIZACIÓN PDFs ==========
 
 # Query base (sin filtro de fecha)
 QUERY_BASE = """
@@ -112,7 +202,7 @@ def get_month_queries():
     logging.info(f"Generadas {len(queries)} consultas mensuales")
     return queries
 
-def refresh_fixed_by_month(mysql_config, specific_month=None, limit_per_query=1000):  # ← Límite por defecto
+def refresh_fixed_by_month(mysql_config, specific_month=None, limit_per_query=1000):
     """
     Refresca la base FIXED consultando mes por mes
     """
@@ -324,13 +414,9 @@ def refresh_fixed_by_day(mysql_config, target_date=None, limit_per_day=500):
             day_str = day.strftime('%Y-%m-%d')
             logging.info(f"Cargando día {day_str} ({i+1}/{len(dates_to_load)})")
             
-            # IMPORTANTE: QUITAR el "AND" extra porque refresh_fixed ya lo agrega
-            # Solo pasamos la condición sin la palabra AND
-            date_condition = f"f.FechaHora BETWEEN '{day_str} 00:00:00' AND '{day_str} 23:59:59'"
-            
             result = refresh_fixed(
                 mysql_config,
-                QUERY_BASE,  # Pasamos la consulta base sin modificar
+                QUERY_BASE,
                 start_iso=f"{day_str} 00:00:00",
                 end_iso=f"{day_str} 23:59:59",
                 limit=limit_per_day
@@ -398,11 +484,7 @@ def background_refresh_task_daily():
                     # Obtener días pendientes
                     all_dates = get_dates_to_load()
                     
-                    # Aquí idealmente deberías verificar qué días ya cargaste
-                    # Por ahora, cargamos el primer día pendiente
                     if all_dates:
-                        # Por simplicidad, cargamos el día más antiguo pendiente
-                        # En una versión futura, deberías guardar qué días ya cargaste
                         target_day = all_dates[0]
                         
                         result = refresh_fixed_by_day(DB_CONFIG, target_date=target_day, limit_per_day=500)
@@ -447,9 +529,14 @@ if init_db is not None:
     except Exception as e:
         logging.error(f"Error inicializando bases de datos: {e}")
 
-# ... (resto del código igual, desde get_mysql_conn hasta el final)
+# Inicializar caché de PDFs al arrancar
+try:
+    refresh_files_cache(force=True)
+    logging.info("✅ Caché de PDFs inicializada")
+except Exception as e:
+    logging.error(f"Error inicializando caché de PDFs: {e}")
 
-# Resto de funciones de conexión y formato (sin cambios significativos)
+# Resto de funciones de conexión y formato
 def get_mysql_conn():
     """Crea una nueva conexión a MySQL usando DB_CONFIG."""
     try:
@@ -636,6 +723,12 @@ def cache_info():
             months_info = get_month_queries()
             info['available_months'] = [m['month'] for m in months_info]
             
+            # Agregar información de caché de PDFs
+            info['pdf_cache'] = {
+                'files_count': len(FILES_SET_CACHE.get('map', {})),
+                'last_refresh': datetime.fromtimestamp(FILES_SET_CACHE.get('ts', 0)).isoformat() if FILES_SET_CACHE.get('ts', 0) else 'never'
+            }
+            
             return jsonify(info)
         except Exception as e:
             return jsonify({'error': str(e)}), 500
@@ -724,12 +817,11 @@ def api_cache_rows():
     sum_total_unique = sum(unique_totals.values())
     distinct_count = len(unique_totals)
 
-    # Agregar indicador de existencia de PDF localmente
-    # Ahora usando la función mejorada que solo retorna True si hay coincidencia exacta
+    # Agregar indicador de existencia de PDF localmente usando caché optimizada
     try:
         for r in rows:
             nombre = r.get('NombreFactura') or ''
-            # Buscar coincidencia exacta
+            # Buscar coincidencia exacta usando caché
             path = _find_best_file_match(nombre)
             r['pdf_exists'] = bool(path and os.path.isfile(path))
     except Exception as e:
@@ -771,17 +863,17 @@ def debug_check_pdf():
 
 @app.route('/api/cache/generate-missing-pdfs', methods=['GET', 'POST'])
 def api_generate_missing_pdfs():
-    """
-    Genera/actualiza un archivo CSV con los nombres de factura (NombreFactura)
-    para aquellos PDFs que NO se encuentran en la carpeta local `FILES_DIR`.
+    #"""
+    #Genera/actualiza un archivo CSV con los nombres de factura (NombreFactura)
+    #para aquellos PDFs que NO se encuentran en la carpeta local `FILES_DIR`.
 
-    El CSV se escribe en el directorio padre de `FILES_FALTANTES` 
-    (ej: C:\facturas faltantes\missing_pdfs.csv). 
-    El archivo se sobrescribe en cada ejecución para evitar duplicados.
+    #El CSV se escribe en el directorio padre de `FILES_FALTANTES` 
+    #(ej: C:\facturas_faltantes\missing_pdfs.csv). 
+    #El archivo se sobrescribe en cada ejecución para evitar duplicados.
 
-    Parámetros opcionales (query string o body): start, end (filtros de fecha)
-    que serán pasados a `get_combined_rows` si existe.
-    """
+    #Parámetros opcionales (query string o body): start, end (filtros de fecha)
+    #que serán pasados a `get_combined_rows` si existe.
+    #"""
     if get_combined_rows is None:
         return jsonify({'status': 'error', 'message': 'Cache DB not available (get_combined_rows missing)'}), 500
 
@@ -798,19 +890,17 @@ def api_generate_missing_pdfs():
     missing_pdfs = {}  # {idcomercial: nombrefactura}
     
     for r in rows:
-        idcomercial = r.get('IDComercial')  # Nota: sin el prefijo 'f.'
+        idcomercial = r.get('IDComercial')
         nombre_factura = (r.get('NombreFactura') or '').strip()
         
         # Solo procesar si tenemos ambos campos
         if not idcomercial or not nombre_factura:
             continue
             
-        # Verificar si el archivo PDF existe
+        # Verificar si el archivo PDF existe usando caché
         path = _find_best_file_match(nombre_factura)
         if not path or not os.path.isfile(path):
             # Si no existe, agregar al diccionario
-            # Nota: Si un mismo IDComercial tiene múltiples facturas, 
-            # se sobrescribirá con la última, pero puedes ajustar según necesidad
             missing_pdfs[str(idcomercial)] = nombre_factura
 
     # Directorio destino
@@ -898,39 +988,6 @@ def refresh_fixed_all_months():
         'results': results
     })
 
-
-# Funciones para manejo de archivos PDF (sin cambios)
-def _find_best_file_match(nombre):
-    """
-    Busca el archivo PDF que coincida exactamente con el nombre proporcionado.
-    Retorna la ruta completa si existe, None si no existe.
-    """
-    if not nombre:
-        return None
-    
-    # Normalizar el nombre: eliminar extensión si está presente y convertir a minúsculas
-    target_name = nombre.lower()
-    if target_name.endswith('.pdf'):
-        target_name = target_name[:-4]
-    
-    try:
-        files = os.listdir(FILES_DIR)
-    except Exception:
-        return None
-    
-    # Buscar coincidencia EXACTA (ignorando mayúsculas/minúsculas)
-    for f in files:
-        # Normalizar el nombre del archivo (sin extensión)
-        file_name = f.lower()
-        if file_name.endswith('.pdf'):
-            file_name = file_name[:-4]
-        
-        # Coincidencia exacta
-        if file_name == target_name:
-            return os.path.join(FILES_DIR, f)
-    
-    # Si no hay coincidencia exacta, retornar None (no mostrar icono verde)
-    return None
 
 @app.route('/api/cache/refresh/fixed/day')
 def refresh_fixed_day():
