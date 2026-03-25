@@ -41,6 +41,42 @@ DB_CONFIG = {
 
 FILES_DIR = r"C:\Users\ymongui\Documents\MisFacturas"
 
+# Cache for file name lookup to avoid repeated os.listdir calls
+# Structure: {'ts': <last refresh timestamp>, 'map': {normalized_name: full_path}}
+FILES_SET_CACHE = {'ts': 0, 'map': {}}
+
+def refresh_files_cache(force=False, ttl_seconds=60):
+    """Refresh and return a mapping normalized_name -> full_path for PDFs in FILES_DIR.
+    If not force and cache is recent (within ttl_seconds), return cached map.
+    """
+    try:
+        now = time.time()
+    except Exception:
+        # time should be available; fallback to no-cache
+        now = 0
+
+    if (not force) and FILES_SET_CACHE.get('ts', 0) and (now - FILES_SET_CACHE['ts'] < ttl_seconds):
+        return FILES_SET_CACHE['map']
+
+    files_map = {}
+    try:
+        entries = os.listdir(FILES_DIR)
+    except Exception:
+        entries = []
+
+    for f in entries:
+        if not f or not isinstance(f, str):
+            continue
+        if f.lower().endswith('.pdf'):
+            name = f[:-4].lower().strip()
+            # Keep first encountered path for the normalized name
+            if name not in files_map:
+                files_map[name] = os.path.join(FILES_DIR, f)
+
+    FILES_SET_CACHE['map'] = files_map
+    FILES_SET_CACHE['ts'] = now
+    return files_map
+
 # Query base (sin filtro de fecha)
 QUERY_BASE = """
 SELECT DISTINCT
@@ -878,6 +914,19 @@ def refresh_fixed_all_months():
     })
 
 
+@app.route('/api/cache/refresh-files')
+def api_refresh_files_cache():
+    """Forzar refresco de la lista de PDFs en FILES_DIR y devolver conteo.
+    Útil para API administrativas o debugging.
+    """
+    try:
+        files_map = refresh_files_cache(force=True, ttl_seconds=0)
+        return jsonify({'status': 'ok', 'count': len(files_map)})
+    except Exception as e:
+        app.logger.error(f"Error refrescando cache de archivos: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 # Funciones para manejo de archivos PDF (sin cambios)
 def _find_best_file_match(nombre):
     """
@@ -892,23 +941,26 @@ def _find_best_file_match(nombre):
     if target_name.endswith('.pdf'):
         target_name = target_name[:-4]
     
+    # Use cached files map for fast lookup
     try:
-        files = os.listdir(FILES_DIR)
+        files_map = refresh_files_cache()
     except Exception:
-        return None
-    
-    # Buscar coincidencia EXACTA (ignorando mayúsculas/minúsculas)
-    for f in files:
-        # Normalizar el nombre del archivo (sin extensión)
-        file_name = f.lower()
-        if file_name.endswith('.pdf'):
-            file_name = file_name[:-4]
-        
-        # Coincidencia exacta
-        if file_name == target_name:
-            return os.path.join(FILES_DIR, f)
-    
-    # Si no hay coincidencia exacta, retornar None (no mostrar icono verde)
+        files_map = {}
+
+    # Direct lookup by normalized name
+    found = files_map.get(target_name)
+    if found and os.path.isfile(found):
+        return found
+
+    # If not found in the cached map, try one more time forcing a refresh (rare)
+    try:
+        files_map = refresh_files_cache(force=True, ttl_seconds=0)
+        found = files_map.get(target_name)
+        if found and os.path.isfile(found):
+            return found
+    except Exception:
+        pass
+
     return None
 
 @app.route('/api/cache/refresh/fixed/day')
