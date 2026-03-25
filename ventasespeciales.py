@@ -39,7 +39,9 @@ DB_CONFIG = {
     'port': 3306
 }
 
-FILES_DIR = r"C:\Users\ymongui\Documents\MisFacturas"
+FILES_DIR = r"C:\facturas"
+
+FILES_FALTANTES = r"C:\facturas faltantes\facturas_faltantes.csv"
 
 # Query base (sin filtro de fecha)
 QUERY_BASE = """
@@ -769,17 +771,17 @@ def debug_check_pdf():
 
 @app.route('/api/cache/generate-missing-pdfs', methods=['GET', 'POST'])
 def api_generate_missing_pdfs():
-    # """
-    # Genera/actualiza un archivo CSV con los nombres de factura (NombreFactura)
-    # para aquellos PDFs que NO se encuentran en la carpeta local `FILES_DIR`.
+    """
+    Genera/actualiza un archivo CSV con los nombres de factura (NombreFactura)
+    para aquellos PDFs que NO se encuentran en la carpeta local `FILES_DIR`.
 
-    # El CSV se escribe en el directorio padre de `FILES_DIR` (por ejemplo,
-    # C:\Users\ymongui\Documents\missing_pdfs.csv). El archivo se sobrescribe
-    # en cada ejecución para evitar duplicados.
+    El CSV se escribe en el directorio padre de `FILES_FALTANTES` 
+    (ej: C:\facturas faltantes\missing_pdfs.csv). 
+    El archivo se sobrescribe en cada ejecución para evitar duplicados.
 
-    # Parámetros opcionales (query string o body): start, end (filtros de fecha)
-    # que serán pasados a `get_combined_rows` si existe.
-    # """
+    Parámetros opcionales (query string o body): start, end (filtros de fecha)
+    que serán pasados a `get_combined_rows` si existe.
+    """
     if get_combined_rows is None:
         return jsonify({'status': 'error', 'message': 'Cache DB not available (get_combined_rows missing)'}), 500
 
@@ -792,32 +794,51 @@ def api_generate_missing_pdfs():
         app.logger.error(f"Error obteniendo filas para generar CSV: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-    missing = set()
+    # Diccionario para almacenar IDComercial y NombreFactura de los PDFs faltantes
+    missing_pdfs = {}  # {idcomercial: nombrefactura}
+    
     for r in rows:
-        nombre = (r.get('NombreFactura') or '').strip()
-        if not nombre:
+        idcomercial = r.get('IDComercial')  # Nota: sin el prefijo 'f.'
+        nombre_factura = (r.get('NombreFactura') or '').strip()
+        
+        # Solo procesar si tenemos ambos campos
+        if not idcomercial or not nombre_factura:
             continue
-        # Si no existe archivo exacto, _find_best_file_match devuelve None
-        path = _find_best_file_match(nombre)
+            
+        # Verificar si el archivo PDF existe
+        path = _find_best_file_match(nombre_factura)
         if not path or not os.path.isfile(path):
-            # Normalizar para evitar duplicados por espacios
-            missing.add(nombre)
+            # Si no existe, agregar al diccionario
+            # Nota: Si un mismo IDComercial tiene múltiples facturas, 
+            # se sobrescribirá con la última, pero puedes ajustar según necesidad
+            missing_pdfs[str(idcomercial)] = nombre_factura
 
-    # Directorio destino: carpeta padre de FILES_DIR (ej: C:\Users\ymongui\Documents)
+    # Directorio destino
     try:
-        out_dir = os.path.abspath(os.path.join(FILES_DIR, '..'))
+        # Obtener directorio padre de FILES_FALTANTES
+        out_dir = os.path.abspath(os.path.join(FILES_FALTANTES, '..'))
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, 'missing_pdfs.csv')
 
-        # Escribir CSV (sobrescribir) con BOM utf-8 para que Excel lo reconozca bien
+        # Escribir CSV con BOM utf-8 para Excel
         with open(out_path, 'w', encoding='utf-8-sig', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(['NombreFactura'])
-            for nombre in sorted(missing):
-                writer.writerow([nombre])
+            # Escribir encabezados
+            writer.writerow(['IDComercial', 'NombreFactura'])
+            
+            # Escribir datos ordenados por IDComercial
+            for idcomercial, nombre_factura in sorted(missing_pdfs.items()):
+                writer.writerow([idcomercial, nombre_factura])
 
-        sample = list(sorted(missing))[:50]
-        return jsonify({'status': 'ok', 'path': out_path, 'count': len(missing), 'sample': sample})
+        # Preparar muestra para respuesta
+        sample = [{'id': k, 'nombre': v} for k, v in list(sorted(missing_pdfs.items()))[:50]]
+        
+        return jsonify({
+            'status': 'ok', 
+            'path': out_path, 
+            'count': len(missing_pdfs), 
+            'sample': sample
+        })
     except Exception as e:
         app.logger.error(f"Error escribiendo CSV: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
@@ -985,4 +1006,4 @@ if __name__ == '__main__':
     start_background_refresh()
     
     # Ejecutar la aplicación
-    app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)
+    app.run(host='0.0.0.0', port=5050, debug=True, threaded=True)
