@@ -133,19 +133,21 @@ def api_refresh_files_cache():
 
 # ========== FIN OPTIMIZACIÓN PDFs ==========
 
-# Query base (sin filtro de fecha)
+# Query base (sin filtro de fecha) - CON nombres y apellidos de clientes
 QUERY_BASE = """
 SELECT DISTINCT
     f.IDComercial, 
     f.NumeroFactura, 
     f.NumeroDocumentoCliente, 
+    c.Apellidos,
+    c.Nombres,
     d.Refe,
     p.NombreProducto,
     d.CantidadUnidades,
     d.CantidadFracciones,
     d.ValorDescuento,
     d.ValorTotal,
-    f.Total, 
+    f.Total,
     tv.Descripcion AS TipoVentaDescripcion, 
     f.FechaHora AS Fecha,
     CONCAT('Factura-', r.Prefijo, f.NumeroFactura, '.pdf') AS NombreFactura
@@ -154,6 +156,8 @@ INNER JOIN sii.pos_t_DetalleFactura AS d
     ON f.IDComercial = d.IDComercial 
    AND f.NumeroCaja = d.NumeroCaja 
    AND f.NumeroFactura = d.NumeroFactura
+LEFT JOIN sii.m_Cliente AS c
+    ON f.NumeroDocumentoCliente = c.NumeroDocumento
 LEFT JOIN sii.m_Producto AS p 
     ON d.Refe = p.Refe
 LEFT JOIN sii.pos_m_TipoVenta tv 
@@ -591,6 +595,11 @@ def index():
 def dashboard():
     return render_template('dashboard.html')
 
+
+@app.route('/clientes')
+def clientes():
+    return render_template('clientes.html')
+
 def default_date_range_for_yesterday():
     # Rango completo del día anterior
     today = datetime.now(timezone.utc).date()
@@ -711,6 +720,145 @@ def api_ventas():
         'sum_total_unique_facturas': sum_total_unique,
         'rows': rows
     })
+    
+@app.route('/api/clients/aggregated')
+def api_clients_aggregated():
+    """
+    Devuelve datos agregados por cliente (documento) con:
+    - Número de facturas únicas
+    - Total facturado
+    - Nombres y Apellidos del cliente
+    """
+    if get_combined_rows is None:
+        return jsonify({'error': 'Cache no disponible'}), 404
+
+    start = request.args.get('start')
+    end = request.args.get('end')
+    pdv = request.args.get('pdv')
+    tipo = request.args.get('tipo')
+    search = request.args.get('search', '').strip().lower()
+    limit = request.args.get('limit', type=int, default=500)
+
+    try:
+        rows = get_combined_rows(start=start, end=end)
+    except Exception as e:
+        app.logger.exception('Error leyendo cache combinada: %s', e)
+        return jsonify({'error': str(e)}), 500
+
+    # Filtros
+    filtered_rows = []
+    for r in rows:
+        if pdv and str(r.get('IDComercial', '')) != pdv:
+            continue
+        if tipo:
+            tipo_val = (r.get('TipoVentaDescripcion') or r.get('TipoVenta') or '').strip()
+            if tipo_val != tipo:
+                continue
+        filtered_rows.append(r)
+
+    # Agregación por cliente
+    client_map = {}
+    facturas_unicas = set()
+
+    for r in filtered_rows:
+        num_doc = str(r.get('NumeroDocumentoCliente', '')).strip()
+        if not num_doc:
+            continue
+
+        nf = str(r.get('NumeroFactura', '')).strip()
+        total = float(r.get('Total', 0) or 0)
+
+        if nf:
+            facturas_unicas.add(nf)
+
+        if num_doc not in client_map:
+            client_map[num_doc] = {
+                'documento': num_doc,
+                'nombres': r.get('Nombres', '') or '',
+                'apellidos': r.get('Apellidos', '') or '',
+                'facturas': set(),
+                'total': 0
+            }
+
+        if nf:
+            client_map[num_doc]['facturas'].add(nf)
+        client_map[num_doc]['total'] += total
+
+    # Construir resultado
+    result = []
+    for doc, data in client_map.items():
+        nombre_completo = (f"{data['nombres']} {data['apellidos']}").strip()
+
+        if search:
+            if search not in doc.lower() and search not in nombre_completo.lower():
+                continue
+
+        result.append({
+            'documento': doc,
+            'nombres': data['nombres'],
+            'apellidos': data['apellidos'],
+            'nombre_completo': nombre_completo,
+            'facturas': len(data['facturas']),
+            'total': data['total']
+        })
+
+    result.sort(key=lambda x: x['total'], reverse=True)
+
+    if limit and limit > 0:
+        result = result[:limit]
+
+    total_ventas = sum(c['total'] for c in result)
+    clientes_frecuentes = sum(1 for c in result if c['facturas'] > 1)
+
+    return jsonify({
+        'success': True,
+        'clients': result,
+        'total_clients': len(result),
+        'total_ventas': total_ventas,
+        'total_facturas': len(facturas_unicas),
+        'clientes_frecuentes': clientes_frecuentes,
+        'filters_applied': {
+            'pdv': pdv,
+            'tipo': tipo,
+            'start': start,
+            'end': end,
+            'search': search
+        }
+    })
+    
+
+@app.route('/api/filters/options')
+def api_filters_options():
+    """
+    Devuelve los valores únicos de PDV y Tipo de Venta disponibles en los datos
+    """
+    if get_combined_rows is None:
+        return jsonify({'error': 'Cache no disponible'}), 404
+    
+    start = request.args.get('start')
+    end = request.args.get('end')
+    
+    try:
+        rows = get_combined_rows(start=start, end=end)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+    pdvs = set()
+    tipos = set()
+    
+    for r in rows:
+        pdv = r.get('IDComercial')
+        if pdv:
+            pdvs.add(str(pdv))
+        
+        tipo = (r.get('TipoVentaDescripcion') or r.get('TipoVenta') or '').strip()
+        if tipo:
+            tipos.add(tipo)
+    
+    return jsonify({
+        'pdv': sorted(list(pdvs), key=lambda x: str(x)),
+        'tipos': sorted(list(tipos))
+    })
 
 @app.route('/api/cache/info')
 def cache_info():
@@ -829,6 +977,45 @@ def api_cache_rows():
         for r in rows:
             r['pdf_exists'] = False
 
+    # Adjuntar NombreCliente (Nombres + Apellidos) mediante una sola consulta por lotes
+    try:
+        # obtener lista única de documentos presentes en las filas
+        docs = sorted({str(r.get('NumeroDocumentoCliente') or '').strip() for r in rows if r.get('NumeroDocumentoCliente')})
+        docs = [d for d in docs if d]
+        client_map = {}
+        if docs:
+            conn = get_mysql_conn()
+            cur = conn.cursor()
+            # ejecutar en chunks para evitar consultas muy largas
+            chunk_size = 500
+            for i in range(0, len(docs), chunk_size):
+                chunk = docs[i:i+chunk_size]
+                placeholders = ','.join(['%s'] * len(chunk))
+                q = f"SELECT NumeroDocumento, Nombres, Apellidos FROM sii.m_Cliente WHERE NumeroDocumento IN ({placeholders})"
+                cur.execute(q, tuple(chunk))
+                for num, nombres, apellidos in cur.fetchall():
+                    key = str(num).strip()
+                    fullname = ((nombres or '').strip() + ' ' + (apellidos or '').strip()).strip()
+                    client_map[key] = fullname
+            try:
+                cur.close()
+            except Exception:
+                pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+        # adjuntar al resultado (campo NombreCliente)
+        for r in rows:
+            num = r.get('NumeroDocumentoCliente')
+            key = str(num).strip() if num is not None else ''
+            r['NombreCliente'] = client_map.get(key, '')
+    except Exception as e:
+        app.logger.error(f"Error obteniendo nombres de clientes: {e}")
+        for r in rows:
+            r['NombreCliente'] = ''
+
     return jsonify({
         'count': len(rows),
         'distinct_facturas_count': distinct_count,
@@ -932,6 +1119,39 @@ def api_generate_missing_pdfs():
     except Exception as e:
         app.logger.error(f"Error escribiendo CSV: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/clients')
+def api_clients():
+    """Devuelve los clientes (NumeroDocumento -> Nombre completo) desde la tabla sii.m_Cliente.
+    Esto permite al frontend mostrar Nombres y Apellidos concatenados por documento.
+    """
+    try:
+        conn = get_mysql_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT NumeroDocumento, Nombres, Apellidos FROM sii.m_Cliente")
+        rows = cur.fetchall()
+        clients = []
+        for r in rows:
+            numero = r[0]
+            nombres = (r[1] or '').strip() if len(r) > 1 else ''
+            apellidos = (r[2] or '').strip() if len(r) > 2 else ''
+            fullname = (nombres + ' ' + apellidos).strip()
+            clients.append({'NumeroDocumento': numero, 'NombreCompleto': fullname})
+        cur.close()
+        conn.close()
+        return jsonify({'clients': clients})
+    except Exception as e:
+        app.logger.exception('Error obteniendo lista de clientes: %s', e)
+        try:
+            cur.close()
+        except Exception:
+            pass
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return jsonify({'clients': []}), 500
 
 
 @app.route('/api/cache/refresh/fixed/weekly')
