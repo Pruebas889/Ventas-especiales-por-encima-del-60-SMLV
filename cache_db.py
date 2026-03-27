@@ -243,7 +243,6 @@ def refresh_recent(mysql_config, base_query, limit=None, start_iso=None, end_iso
 def get_combined_rows(start=None, end=None, limit=None):
     """Devuelve filas combinadas de recent (preferido) y fixed."""
     init_db()
-    rows_map = {}
     def _read_db(dbname):
         p = _db_path(dbname)
         conn = sqlite3.connect(str(p))
@@ -267,22 +266,34 @@ def get_combined_rows(start=None, end=None, limit=None):
         finally:
             conn.close()
 
+    def _row_key(r):
+        return (
+            str(r.get('NumeroFactura') or '').strip(),
+            str(r.get('Refe') or '').strip(),
+            str(r.get('CantidadUnidades') or '').strip(),
+            str(r.get('CantidadFracciones') or '').strip(),
+            str(r.get('ValorTotal') or '').strip()
+        )
+
+    combined = []
+    seen_keys = set()
+
+    # Agregar filas recientes primero (tienen prioridad si hay solapamiento)
     recent_rows = _read_db(RECENT_DB)
     for r in recent_rows:
-        nf = str(r.get('NumeroFactura') or '').strip()
-        if nf:
-            rows_map[nf] = r
+        k = _row_key(r)
+        if k in seen_keys:
+            continue
+        seen_keys.add(k)
+        combined.append(r)
 
     fixed_rows = _read_db(FIXED_DB)
     for r in fixed_rows:
-        nf = str(r.get('NumeroFactura') or '').strip()
-        if not nf:
+        k = _row_key(r)
+        if k in seen_keys:
             continue
-        if nf in rows_map:
-            continue
-        rows_map[nf] = r
-
-    combined = list(rows_map.values())
+        seen_keys.add(k)
+        combined.append(r)
     try:
         combined.sort(key=lambda x: x.get('Fecha') or '')
     except Exception:

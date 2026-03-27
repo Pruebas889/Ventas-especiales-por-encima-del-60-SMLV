@@ -27,13 +27,15 @@ SELECT DISTINCT
     f.IDComercial, 
     f.NumeroFactura, 
     f.NumeroDocumentoCliente, 
+    c.Apellidos,
+    c.Nombres,
     d.Refe,
     p.NombreProducto,
     d.CantidadUnidades,
     d.CantidadFracciones,
     d.ValorDescuento,
     d.ValorTotal,
-    f.Total, 
+    f.Total,
     tv.Descripcion AS TipoVentaDescripcion, 
     f.FechaHora AS Fecha,
     CONCAT('Factura-', r.Prefijo, f.NumeroFactura, '.pdf') AS NombreFactura
@@ -42,6 +44,8 @@ INNER JOIN sii.pos_t_DetalleFactura AS d
     ON f.IDComercial = d.IDComercial 
    AND f.NumeroCaja = d.NumeroCaja 
    AND f.NumeroFactura = d.NumeroFactura
+LEFT JOIN sii.m_Cliente AS c
+    ON f.NumeroDocumentoCliente = c.NumeroDocumento
 LEFT JOIN sii.m_Producto AS p 
     ON d.Refe = p.Refe
 LEFT JOIN sii.pos_m_TipoVenta tv 
@@ -51,7 +55,7 @@ LEFT JOIN sii.pos_m_Resolucion r
    AND f.NumeroCaja = r.NumeroCaja 
    AND f.NumeroFactura BETWEEN r.InicioFactura AND r.FinFactura
 WHERE 
-  f.FechaHora >= '2026-03-05 00:00:00' 
+  f.FechaHora >= '2026-03-27 00:00:00' 
   AND f.Total >= 1050543;
 """
 
