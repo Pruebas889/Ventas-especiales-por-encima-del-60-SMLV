@@ -720,7 +720,144 @@ def api_ventas():
         'sum_total_unique_facturas': sum_total_unique,
         'rows': rows
     })
+
+
+@app.route('/api/cache/filtered')
+def api_cache_filtered():
+    """
+    Devuelve filas filtradas Y PAGINADAS desde el backend.
+    Parámetros:
+    - start, end: fechas
+    - pdv: filtrar por PDV
+    - cliente: filtrar por documento
+    - tipo: filtrar por tipo de venta
+    - search: búsqueda en múltiples campos
+    - page: página (1-indexed)
+    - per_page: registros por página (default 100)
+    """
+    if get_combined_rows is None:
+        return jsonify({'error': 'Cache no disponible'}), 404
+
+    start = request.args.get('start')
+    end = request.args.get('end')
+    pdv = request.args.get('pdv')
+    cliente = request.args.get('cliente')
+    tipo = request.args.get('tipo')
+    search = request.args.get('search', '').strip().lower()
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 100, type=int)
+
+    try:
+        rows = get_combined_rows(start=start, end=end)
+    except Exception as e:
+        app.logger.exception('Error leyendo cache: %s', e)
+        return jsonify({'error': str(e)}), 500
+
+    # Aplicar filtros en backend (más rápido que en JS)
+    filtered = rows
+    if pdv:
+        filtered = [r for r in filtered if str(r.get('IDComercial', '')) == pdv]
+    if cliente:
+        filtered = [r for r in filtered if str(r.get('NumeroDocumentoCliente', '')) == cliente]
+    if tipo:
+        filtered = [r for r in filtered if (r.get('TipoVentaDescripcion') or r.get('TipoVenta') or '') == tipo]
+    if search:
+        filtered = [r for r in filtered if
+                    search in str(r.get('IDComercial', '')).lower() or
+                    search in str(r.get('NumeroFactura', '')).lower() or
+                    search in str(r.get('NumeroDocumentoCliente', '')).lower() or
+                    search in str(r.get('NombreProducto', '')).lower() or
+                    search in str(r.get('Refe', '')).lower()]
+
+    # Calcular totales únicos (facturas únicas) para los KPIs
+    unique_totals = {}
+    seen = set()
+    for r in filtered:
+        nf = str(r.get('NumeroFactura', '')).strip()
+        if nf and nf not in seen:
+            seen.add(nf)
+            try:
+                unique_totals[nf] = float(r.get('Total', 0) or 0)
+            except:
+                pass
+
+    sum_total_unique = sum(unique_totals.values())
+    distinct_count = len(unique_totals)
+
+    # Clientes frecuentes
+    client_count = {}
+    for r in filtered:
+        doc = str(r.get('NumeroDocumentoCliente', '')).strip()
+        if doc:
+            client_count[doc] = client_count.get(doc, 0) + 1
+    clientes_frecuentes = sum(1 for c in client_count.values() if c > 1)
+
+    # PDV únicos
+    pdv_set = {str(r.get('IDComercial', '')) for r in filtered if r.get('IDComercial')}
+
+    # Paginación
+    total = len(filtered)
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    page_rows = filtered[start_idx:end_idx]
+
+    # Agregar pdf_exists a las filas de la página
+    try:
+        for r in page_rows:
+            nombre = r.get('NombreFactura') or ''
+            path = _find_best_file_match(nombre)
+            r['pdf_exists'] = bool(path and os.path.isfile(path))
+    except Exception as e:
+        app.logger.error(f"Error verificando PDFs: {e}")
+
+    return jsonify({
+        'rows': page_rows,
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+        'total_pages': (total + per_page - 1) // per_page,
+        'kpis': {
+            'total_ventas': sum_total_unique,
+            'total_facturas': distinct_count,
+            'clientes_frecuentes': clientes_frecuentes,
+            'pdv_count': len(pdv_set)
+        }
+    })
     
+
+@app.route('/api/cache/filter-options')
+def api_cache_filter_options():
+    """Devuelve solo los valores únicos para PDV, Clientes y Tipos (sin procesar datos pesados)."""
+    if get_combined_rows is None:
+        return jsonify({'error': 'Cache no disponible'}), 404
+
+    start = request.args.get('start')
+    end = request.args.get('end')
+
+    try:
+        rows = get_combined_rows(start=start, end=end)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    pdvs = set()
+    clientes = set()
+    tipos = set()
+
+    for r in rows:
+        if r.get('IDComercial'):
+            pdvs.add(str(r.get('IDComercial')))
+        if r.get('NumeroDocumentoCliente'):
+            clientes.add(str(r.get('NumeroDocumentoCliente')))
+        tipo = (r.get('TipoVentaDescripcion') or r.get('TipoVenta') or '').strip()
+        if tipo:
+            tipos.add(tipo)
+
+    return jsonify({
+        'pdv': sorted(list(pdvs)),
+        'clientes': sorted(list(clientes)),
+        'tipos': sorted(list(tipos))
+    })
+
 @app.route('/api/clients/aggregated')
 def api_clients_aggregated():
     """
