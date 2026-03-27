@@ -2,7 +2,7 @@ from flask import Flask, render_template, jsonify, g, request, send_file, abort
 import os
 import csv
 from datetime import datetime, timedelta, date, timezone
-from datetime import date, timezone  # Asegúrate de importar timezone
+from datetime import date, timezone
 import mysql.connector
 from mysql.connector import Error
 import logging
@@ -39,20 +39,22 @@ DB_CONFIG = {
     'port': 3306
 }
 
-FILES_DIR = r"C:\Users\ymongui\Documents\MisFacturas"
+FILES_DIR = r"C:\facturas"
+FILES_FALTANTES = r"C:\facturas_faltantes\facturas_faltantes.csv.txt"
 
+# ========== OPTIMIZACIÓN DE PDFs ==========
 # Cache for file name lookup to avoid repeated os.listdir calls
 # Structure: {'ts': <last refresh timestamp>, 'map': {normalized_name: full_path}}
 FILES_SET_CACHE = {'ts': 0, 'map': {}}
 
-def refresh_files_cache(force=False, ttl_seconds=60):
-    """Refresh and return a mapping normalized_name -> full_path for PDFs in FILES_DIR.
+def refresh_files_cache(force=False, ttl_seconds=300):  # TTL de 5 minutos por defecto
+    """
+    Refresh and return a mapping normalized_name -> full_path for PDFs in FILES_DIR.
     If not force and cache is recent (within ttl_seconds), return cached map.
     """
     try:
         now = time.time()
     except Exception:
-        # time should be available; fallback to no-cache
         now = 0
 
     if (not force) and FILES_SET_CACHE.get('ts', 0) and (now - FILES_SET_CACHE['ts'] < ttl_seconds):
@@ -61,21 +63,75 @@ def refresh_files_cache(force=False, ttl_seconds=60):
     files_map = {}
     try:
         entries = os.listdir(FILES_DIR)
-    except Exception:
-        entries = []
-
-    for f in entries:
-        if not f or not isinstance(f, str):
-            continue
-        if f.lower().endswith('.pdf'):
-            name = f[:-4].lower().strip()
-            # Keep first encountered path for the normalized name
-            if name not in files_map:
-                files_map[name] = os.path.join(FILES_DIR, f)
+        logging.info(f"🔄 Escaneando directorio de PDFs: {len(entries)} archivos totales")
+        
+        for f in entries:
+            if not f or not isinstance(f, str):
+                continue
+            if f.lower().endswith('.pdf'):
+                name = f[:-4].lower().strip()
+                # Keep first encountered path for the normalized name
+                if name not in files_map:
+                    files_map[name] = os.path.join(FILES_DIR, f)
+        
+        logging.info(f"✅ Cache de PDFs actualizado: {len(files_map)} archivos PDF encontrados")
+        
+    except Exception as e:
+        logging.error(f"Error escaneando directorio de PDFs: {e}")
+        files_map = FILES_SET_CACHE.get('map', {})
 
     FILES_SET_CACHE['map'] = files_map
     FILES_SET_CACHE['ts'] = now
     return files_map
+
+def _find_best_file_match(nombre):
+    """
+    Busca el archivo PDF que coincida exactamente con el nombre proporcionado.
+    Usa caché para evitar escaneos repetidos del directorio.
+    Retorna la ruta completa si existe, None si no existe.
+    """
+    if not nombre:
+        return None
+    
+    # Normalizar el nombre: eliminar extensión si está presente y convertir a minúsculas
+    target_name = nombre.lower()
+    if target_name.endswith('.pdf'):
+        target_name = target_name[:-4]
+    
+    # Use cached files map for fast lookup
+    try:
+        files_map = refresh_files_cache()  # Usa TTL de 5 minutos
+    except Exception:
+        files_map = {}
+
+    # Direct lookup by normalized name
+    found = files_map.get(target_name)
+    if found and os.path.isfile(found):
+        return found
+
+    # If not found in the cached map, try one more time forcing a refresh (rare)
+    try:
+        files_map = refresh_files_cache(force=True, ttl_seconds=0)
+        found = files_map.get(target_name)
+        if found and os.path.isfile(found):
+            return found
+    except Exception:
+        pass
+
+    return None
+
+# Endpoint para forzar refresco de la caché de PDFs
+@app.route('/api/cache/refresh-files')
+def api_refresh_files_cache():
+    """Forzar refresco de la lista de PDFs en FILES_DIR y devolver conteo."""
+    try:
+        files_map = refresh_files_cache(force=True, ttl_seconds=0)
+        return jsonify({'status': 'ok', 'count': len(files_map)})
+    except Exception as e:
+        app.logger.error(f"Error refrescando cache de archivos: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+# ========== FIN OPTIMIZACIÓN PDFs ==========
 
 # Query base (sin filtro de fecha)
 QUERY_BASE = """
@@ -83,13 +139,15 @@ SELECT DISTINCT
     f.IDComercial, 
     f.NumeroFactura, 
     f.NumeroDocumentoCliente, 
+    c.Apellidos,
+    c.Nombres,
     d.Refe,
     p.NombreProducto,
     d.CantidadUnidades,
     d.CantidadFracciones,
     d.ValorDescuento,
     d.ValorTotal,
-    f.Total, 
+    f.Total,
     tv.Descripcion AS TipoVentaDescripcion, 
     f.FechaHora AS Fecha,
     CONCAT('Factura-', r.Prefijo, f.NumeroFactura, '.pdf') AS NombreFactura
@@ -98,6 +156,8 @@ INNER JOIN sii.pos_t_DetalleFactura AS d
     ON f.IDComercial = d.IDComercial 
    AND f.NumeroCaja = d.NumeroCaja 
    AND f.NumeroFactura = d.NumeroFactura
+LEFT JOIN sii.m_Cliente AS c
+    ON f.NumeroDocumentoCliente = c.NumeroDocumento
 LEFT JOIN sii.m_Producto AS p 
     ON d.Refe = p.Refe
 LEFT JOIN sii.pos_m_TipoVenta tv 
@@ -146,7 +206,7 @@ def get_month_queries():
     logging.info(f"Generadas {len(queries)} consultas mensuales")
     return queries
 
-def refresh_fixed_by_month(mysql_config, specific_month=None, limit_per_query=1000):  # ← Límite por defecto
+def refresh_fixed_by_month(mysql_config, specific_month=None, limit_per_query=1000):
     """
     Refresca la base FIXED consultando mes por mes
     """
@@ -358,13 +418,9 @@ def refresh_fixed_by_day(mysql_config, target_date=None, limit_per_day=500):
             day_str = day.strftime('%Y-%m-%d')
             logging.info(f"Cargando día {day_str} ({i+1}/{len(dates_to_load)})")
             
-            # IMPORTANTE: QUITAR el "AND" extra porque refresh_fixed ya lo agrega
-            # Solo pasamos la condición sin la palabra AND
-            date_condition = f"f.FechaHora BETWEEN '{day_str} 00:00:00' AND '{day_str} 23:59:59'"
-            
             result = refresh_fixed(
                 mysql_config,
-                QUERY_BASE,  # Pasamos la consulta base sin modificar
+                QUERY_BASE,
                 start_iso=f"{day_str} 00:00:00",
                 end_iso=f"{day_str} 23:59:59",
                 limit=limit_per_day
@@ -432,11 +488,7 @@ def background_refresh_task_daily():
                     # Obtener días pendientes
                     all_dates = get_dates_to_load()
                     
-                    # Aquí idealmente deberías verificar qué días ya cargaste
-                    # Por ahora, cargamos el primer día pendiente
                     if all_dates:
-                        # Por simplicidad, cargamos el día más antiguo pendiente
-                        # En una versión futura, deberías guardar qué días ya cargaste
                         target_day = all_dates[0]
                         
                         result = refresh_fixed_by_day(DB_CONFIG, target_date=target_day, limit_per_day=500)
@@ -481,9 +533,14 @@ if init_db is not None:
     except Exception as e:
         logging.error(f"Error inicializando bases de datos: {e}")
 
-# ... (resto del código igual, desde get_mysql_conn hasta el final)
+# Inicializar caché de PDFs al arrancar
+try:
+    refresh_files_cache(force=True)
+    logging.info("✅ Caché de PDFs inicializada")
+except Exception as e:
+    logging.error(f"Error inicializando caché de PDFs: {e}")
 
-# Resto de funciones de conexión y formato (sin cambios significativos)
+# Resto de funciones de conexión y formato
 def get_mysql_conn():
     """Crea una nueva conexión a MySQL usando DB_CONFIG."""
     try:
@@ -537,6 +594,11 @@ def index():
 @app.route('/dashboard')
 def dashboard():
     return render_template('dashboard.html')
+
+
+@app.route('/clientes')
+def clientes():
+    return render_template('clientes.html')
 
 def default_date_range_for_yesterday():
     # Rango completo del día anterior
@@ -659,6 +721,282 @@ def api_ventas():
         'rows': rows
     })
 
+
+@app.route('/api/cache/filtered')
+def api_cache_filtered():
+    """
+    Devuelve filas filtradas Y PAGINADAS desde el backend.
+    Parámetros:
+    - start, end: fechas
+    - pdv: filtrar por PDV
+    - cliente: filtrar por documento
+    - tipo: filtrar por tipo de venta
+    - search: búsqueda en múltiples campos
+    - page: página (1-indexed)
+    - per_page: registros por página (default 100)
+    """
+    if get_combined_rows is None:
+        return jsonify({'error': 'Cache no disponible'}), 404
+
+    start = request.args.get('start')
+    end = request.args.get('end')
+    pdv = request.args.get('pdv')
+    cliente = request.args.get('cliente')
+    tipo = request.args.get('tipo')
+    search = request.args.get('search', '').strip().lower()
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 100, type=int)
+
+    try:
+        rows = get_combined_rows(start=start, end=end)
+    except Exception as e:
+        app.logger.exception('Error leyendo cache: %s', e)
+        return jsonify({'error': str(e)}), 500
+
+    # Aplicar filtros en backend (más rápido que en JS)
+    filtered = rows
+    if pdv:
+        filtered = [r for r in filtered if str(r.get('IDComercial', '')) == pdv]
+    if cliente:
+        filtered = [r for r in filtered if str(r.get('NumeroDocumentoCliente', '')) == cliente]
+    if tipo:
+        filtered = [r for r in filtered if (r.get('TipoVentaDescripcion') or r.get('TipoVenta') or '') == tipo]
+    if search:
+        filtered = [r for r in filtered if
+                    search in str(r.get('IDComercial', '')).lower() or
+                    search in str(r.get('NumeroFactura', '')).lower() or
+                    search in str(r.get('NumeroDocumentoCliente', '')).lower() or
+                    search in str(r.get('NombreProducto', '')).lower() or
+                    search in str(r.get('Refe', '')).lower()]
+
+    # Calcular totales únicos (facturas únicas) para los KPIs
+    unique_totals = {}
+    seen = set()
+    for r in filtered:
+        nf = str(r.get('NumeroFactura', '')).strip()
+        if nf and nf not in seen:
+            seen.add(nf)
+            try:
+                unique_totals[nf] = float(r.get('Total', 0) or 0)
+            except:
+                pass
+
+    sum_total_unique = sum(unique_totals.values())
+    distinct_count = len(unique_totals)
+
+    # Clientes frecuentes
+    client_count = {}
+    for r in filtered:
+        doc = str(r.get('NumeroDocumentoCliente', '')).strip()
+        if doc:
+            client_count[doc] = client_count.get(doc, 0) + 1
+    clientes_frecuentes = sum(1 for c in client_count.values() if c > 1)
+
+    # PDV únicos
+    pdv_set = {str(r.get('IDComercial', '')) for r in filtered if r.get('IDComercial')}
+
+    # Paginación
+    total = len(filtered)
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    page_rows = filtered[start_idx:end_idx]
+
+    # Agregar pdf_exists a las filas de la página
+    try:
+        for r in page_rows:
+            nombre = r.get('NombreFactura') or ''
+            path = _find_best_file_match(nombre)
+            r['pdf_exists'] = bool(path and os.path.isfile(path))
+    except Exception as e:
+        app.logger.error(f"Error verificando PDFs: {e}")
+
+    return jsonify({
+        'rows': page_rows,
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+        'total_pages': (total + per_page - 1) // per_page,
+        'kpis': {
+            'total_ventas': sum_total_unique,
+            'total_facturas': distinct_count,
+            'clientes_frecuentes': clientes_frecuentes,
+            'pdv_count': len(pdv_set)
+        }
+    })
+    
+
+@app.route('/api/cache/filter-options')
+def api_cache_filter_options():
+    """Devuelve solo los valores únicos para PDV, Clientes y Tipos (sin procesar datos pesados)."""
+    if get_combined_rows is None:
+        return jsonify({'error': 'Cache no disponible'}), 404
+
+    start = request.args.get('start')
+    end = request.args.get('end')
+
+    try:
+        rows = get_combined_rows(start=start, end=end)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    pdvs = set()
+    clientes = set()
+    tipos = set()
+
+    for r in rows:
+        if r.get('IDComercial'):
+            pdvs.add(str(r.get('IDComercial')))
+        if r.get('NumeroDocumentoCliente'):
+            clientes.add(str(r.get('NumeroDocumentoCliente')))
+        tipo = (r.get('TipoVentaDescripcion') or r.get('TipoVenta') or '').strip()
+        if tipo:
+            tipos.add(tipo)
+
+    return jsonify({
+        'pdv': sorted(list(pdvs)),
+        'clientes': sorted(list(clientes)),
+        'tipos': sorted(list(tipos))
+    })
+
+@app.route('/api/clients/aggregated')
+def api_clients_aggregated():
+    """
+    Devuelve datos agregados por cliente (documento) con:
+    - Número de facturas únicas
+    - Total facturado
+    - Nombres y Apellidos del cliente
+    """
+    if get_combined_rows is None:
+        return jsonify({'error': 'Cache no disponible'}), 404
+
+    start = request.args.get('start')
+    end = request.args.get('end')
+    pdv = request.args.get('pdv')
+    tipo = request.args.get('tipo')
+    search = request.args.get('search', '').strip().lower()
+    limit = request.args.get('limit', type=int, default=500)
+
+    try:
+        rows = get_combined_rows(start=start, end=end)
+    except Exception as e:
+        app.logger.exception('Error leyendo cache combinada: %s', e)
+        return jsonify({'error': str(e)}), 500
+
+    # Filtros
+    filtered_rows = []
+    for r in rows:
+        if pdv and str(r.get('IDComercial', '')) != pdv:
+            continue
+        if tipo:
+            tipo_val = (r.get('TipoVentaDescripcion') or r.get('TipoVenta') or '').strip()
+            if tipo_val != tipo:
+                continue
+        filtered_rows.append(r)
+
+    # Agregación por cliente
+    client_map = {}
+    facturas_unicas = set()
+
+    for r in filtered_rows:
+        num_doc = str(r.get('NumeroDocumentoCliente', '')).strip()
+        if not num_doc:
+            continue
+
+        nf = str(r.get('NumeroFactura', '')).strip()
+        total = float(r.get('Total', 0) or 0)
+
+        if nf:
+            facturas_unicas.add(nf)
+
+        if num_doc not in client_map:
+            client_map[num_doc] = {
+                'documento': num_doc,
+                'nombres': r.get('Nombres', '') or '',
+                'apellidos': r.get('Apellidos', '') or '',
+                'facturas': set(),
+                'total': 0
+            }
+
+        if nf:
+            client_map[num_doc]['facturas'].add(nf)
+        client_map[num_doc]['total'] += total
+
+    # Construir resultado
+    result = []
+    for doc, data in client_map.items():
+        nombre_completo = (f"{data['nombres']} {data['apellidos']}").strip()
+
+        if search:
+            if search not in doc.lower() and search not in nombre_completo.lower():
+                continue
+
+        result.append({
+            'documento': doc,
+            'nombres': data['nombres'],
+            'apellidos': data['apellidos'],
+            'nombre_completo': nombre_completo,
+            'facturas': len(data['facturas']),
+            'total': data['total']
+        })
+
+    result.sort(key=lambda x: x['total'], reverse=True)
+
+    if limit and limit > 0:
+        result = result[:limit]
+
+    total_ventas = sum(c['total'] for c in result)
+    clientes_frecuentes = sum(1 for c in result if c['facturas'] > 1)
+
+    return jsonify({
+        'success': True,
+        'clients': result,
+        'total_clients': len(result),
+        'total_ventas': total_ventas,
+        'total_facturas': len(facturas_unicas),
+        'clientes_frecuentes': clientes_frecuentes,
+        'filters_applied': {
+            'pdv': pdv,
+            'tipo': tipo,
+            'start': start,
+            'end': end,
+            'search': search
+        }
+    })
+    
+
+@app.route('/api/filters/options')
+def api_filters_options():
+    """
+    Devuelve los valores únicos de PDV y Tipo de Venta disponibles en los datos
+    """
+    if get_combined_rows is None:
+        return jsonify({'error': 'Cache no disponible'}), 404
+    
+    start = request.args.get('start')
+    end = request.args.get('end')
+    
+    try:
+        rows = get_combined_rows(start=start, end=end)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+    pdvs = set()
+    tipos = set()
+    
+    for r in rows:
+        pdv = r.get('IDComercial')
+        if pdv:
+            pdvs.add(str(pdv))
+        
+        tipo = (r.get('TipoVentaDescripcion') or r.get('TipoVenta') or '').strip()
+        if tipo:
+            tipos.add(tipo)
+    
+    return jsonify({
+        'pdv': sorted(list(pdvs), key=lambda x: str(x)),
+        'tipos': sorted(list(tipos))
+    })
+
 @app.route('/api/cache/info')
 def cache_info():
     """Endpoint para ver información del estado de la cache"""
@@ -669,6 +1007,12 @@ def cache_info():
             # Agregar información de meses disponibles
             months_info = get_month_queries()
             info['available_months'] = [m['month'] for m in months_info]
+            
+            # Agregar información de caché de PDFs
+            info['pdf_cache'] = {
+                'files_count': len(FILES_SET_CACHE.get('map', {})),
+                'last_refresh': datetime.fromtimestamp(FILES_SET_CACHE.get('ts', 0)).isoformat() if FILES_SET_CACHE.get('ts', 0) else 'never'
+            }
             
             return jsonify(info)
         except Exception as e:
@@ -758,18 +1102,56 @@ def api_cache_rows():
     sum_total_unique = sum(unique_totals.values())
     distinct_count = len(unique_totals)
 
-    # Agregar indicador de existencia de PDF localmente
-    # Ahora usando la función mejorada que solo retorna True si hay coincidencia exacta
+    # Agregar indicador de existencia de PDF localmente usando caché optimizada
     try:
         for r in rows:
             nombre = r.get('NombreFactura') or ''
-            # Buscar coincidencia exacta
+            # Buscar coincidencia exacta usando caché
             path = _find_best_file_match(nombre)
             r['pdf_exists'] = bool(path and os.path.isfile(path))
     except Exception as e:
         app.logger.error(f"Error verificando PDFs: {e}")
         for r in rows:
             r['pdf_exists'] = False
+
+    # Adjuntar NombreCliente (Nombres + Apellidos) mediante una sola consulta por lotes
+    try:
+        # obtener lista única de documentos presentes en las filas
+        docs = sorted({str(r.get('NumeroDocumentoCliente') or '').strip() for r in rows if r.get('NumeroDocumentoCliente')})
+        docs = [d for d in docs if d]
+        client_map = {}
+        if docs:
+            conn = get_mysql_conn()
+            cur = conn.cursor()
+            # ejecutar en chunks para evitar consultas muy largas
+            chunk_size = 500
+            for i in range(0, len(docs), chunk_size):
+                chunk = docs[i:i+chunk_size]
+                placeholders = ','.join(['%s'] * len(chunk))
+                q = f"SELECT NumeroDocumento, Nombres, Apellidos FROM sii.m_Cliente WHERE NumeroDocumento IN ({placeholders})"
+                cur.execute(q, tuple(chunk))
+                for num, nombres, apellidos in cur.fetchall():
+                    key = str(num).strip()
+                    fullname = ((nombres or '').strip() + ' ' + (apellidos or '').strip()).strip()
+                    client_map[key] = fullname
+            try:
+                cur.close()
+            except Exception:
+                pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+        # adjuntar al resultado (campo NombreCliente)
+        for r in rows:
+            num = r.get('NumeroDocumentoCliente')
+            key = str(num).strip() if num is not None else ''
+            r['NombreCliente'] = client_map.get(key, '')
+    except Exception as e:
+        app.logger.error(f"Error obteniendo nombres de clientes: {e}")
+        for r in rows:
+            r['NombreCliente'] = ''
 
     return jsonify({
         'count': len(rows),
@@ -805,17 +1187,17 @@ def debug_check_pdf():
 
 @app.route('/api/cache/generate-missing-pdfs', methods=['GET', 'POST'])
 def api_generate_missing_pdfs():
-    # """
-    # Genera/actualiza un archivo CSV con los nombres de factura (NombreFactura)
-    # para aquellos PDFs que NO se encuentran en la carpeta local `FILES_DIR`.
+    #"""
+    #Genera/actualiza un archivo CSV con los nombres de factura (NombreFactura)
+    #para aquellos PDFs que NO se encuentran en la carpeta local `FILES_DIR`.
 
-    # El CSV se escribe en el directorio padre de `FILES_DIR` (por ejemplo,
-    # C:\Users\ymongui\Documents\missing_pdfs.csv). El archivo se sobrescribe
-    # en cada ejecución para evitar duplicados.
+    #El CSV se escribe en el directorio padre de `FILES_FALTANTES` 
+    #(ej: C:\facturas_faltantes\missing_pdfs.csv). 
+    #El archivo se sobrescribe en cada ejecución para evitar duplicados.
 
-    # Parámetros opcionales (query string o body): start, end (filtros de fecha)
-    # que serán pasados a `get_combined_rows` si existe.
-    # """
+    #Parámetros opcionales (query string o body): start, end (filtros de fecha)
+    #que serán pasados a `get_combined_rows` si existe.
+    #"""
     if get_combined_rows is None:
         return jsonify({'status': 'error', 'message': 'Cache DB not available (get_combined_rows missing)'}), 500
 
@@ -828,35 +1210,85 @@ def api_generate_missing_pdfs():
         app.logger.error(f"Error obteniendo filas para generar CSV: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-    missing = set()
+    # Diccionario para almacenar IDComercial y NombreFactura de los PDFs faltantes
+    missing_pdfs = {}  # {idcomercial: nombrefactura}
+    
     for r in rows:
-        nombre = (r.get('NombreFactura') or '').strip()
-        if not nombre:
+        idcomercial = r.get('IDComercial')
+        nombre_factura = (r.get('NombreFactura') or '').strip()
+        
+        # Solo procesar si tenemos ambos campos
+        if not idcomercial or not nombre_factura:
             continue
-        # Si no existe archivo exacto, _find_best_file_match devuelve None
-        path = _find_best_file_match(nombre)
+            
+        # Verificar si el archivo PDF existe usando caché
+        path = _find_best_file_match(nombre_factura)
         if not path or not os.path.isfile(path):
-            # Normalizar para evitar duplicados por espacios
-            missing.add(nombre)
+            # Si no existe, agregar al diccionario
+            missing_pdfs[str(idcomercial)] = nombre_factura
 
-    # Directorio destino: carpeta padre de FILES_DIR (ej: C:\Users\ymongui\Documents)
+    # Directorio destino
     try:
-        out_dir = os.path.abspath(os.path.join(FILES_DIR, '..'))
+        # Obtener directorio padre de FILES_FALTANTES
+        out_dir = os.path.abspath(os.path.join(FILES_FALTANTES, '..'))
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, 'missing_pdfs.csv')
 
-        # Escribir CSV (sobrescribir) con BOM utf-8 para que Excel lo reconozca bien
+        # Escribir CSV con BOM utf-8 para Excel
         with open(out_path, 'w', encoding='utf-8-sig', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(['NombreFactura'])
-            for nombre in sorted(missing):
-                writer.writerow([nombre])
+            # Escribir encabezados
+            writer.writerow(['IDComercial', 'NombreFactura'])
+            
+            # Escribir datos ordenados por IDComercial
+            for idcomercial, nombre_factura in sorted(missing_pdfs.items()):
+                writer.writerow([idcomercial, nombre_factura])
 
-        sample = list(sorted(missing))[:50]
-        return jsonify({'status': 'ok', 'path': out_path, 'count': len(missing), 'sample': sample})
+        # Preparar muestra para respuesta
+        sample = [{'id': k, 'nombre': v} for k, v in list(sorted(missing_pdfs.items()))[:50]]
+        
+        return jsonify({
+            'status': 'ok', 
+            'path': out_path, 
+            'count': len(missing_pdfs), 
+            'sample': sample
+        })
     except Exception as e:
         app.logger.error(f"Error escribiendo CSV: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/clients')
+def api_clients():
+    """Devuelve los clientes (NumeroDocumento -> Nombre completo) desde la tabla sii.m_Cliente.
+    Esto permite al frontend mostrar Nombres y Apellidos concatenados por documento.
+    """
+    try:
+        conn = get_mysql_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT NumeroDocumento, Nombres, Apellidos FROM sii.m_Cliente")
+        rows = cur.fetchall()
+        clients = []
+        for r in rows:
+            numero = r[0]
+            nombres = (r[1] or '').strip() if len(r) > 1 else ''
+            apellidos = (r[2] or '').strip() if len(r) > 2 else ''
+            fullname = (nombres + ' ' + apellidos).strip()
+            clients.append({'NumeroDocumento': numero, 'NombreCompleto': fullname})
+        cur.close()
+        conn.close()
+        return jsonify({'clients': clients})
+    except Exception as e:
+        app.logger.exception('Error obteniendo lista de clientes: %s', e)
+        try:
+            cur.close()
+        except Exception:
+            pass
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return jsonify({'clients': []}), 500
 
 
 @app.route('/api/cache/refresh/fixed/weekly')
@@ -941,26 +1373,23 @@ def _find_best_file_match(nombre):
     if target_name.endswith('.pdf'):
         target_name = target_name[:-4]
     
-    # Use cached files map for fast lookup
     try:
-        files_map = refresh_files_cache()
+        files = os.listdir(FILES_DIR)
     except Exception:
-        files_map = {}
-
-    # Direct lookup by normalized name
-    found = files_map.get(target_name)
-    if found and os.path.isfile(found):
-        return found
-
-    # If not found in the cached map, try one more time forcing a refresh (rare)
-    try:
-        files_map = refresh_files_cache(force=True, ttl_seconds=0)
-        found = files_map.get(target_name)
-        if found and os.path.isfile(found):
-            return found
-    except Exception:
-        pass
-
+        return None
+    
+    # Buscar coincidencia EXACTA (ignorando mayúsculas/minúsculas)
+    for f in files:
+        # Normalizar el nombre del archivo (sin extensión)
+        file_name = f.lower()
+        if file_name.endswith('.pdf'):
+            file_name = file_name[:-4]
+        
+        # Coincidencia exacta
+        if file_name == target_name:
+            return os.path.join(FILES_DIR, f)
+    
+    # Si no hay coincidencia exacta, retornar None (no mostrar icono verde)
     return None
 
 @app.route('/api/cache/refresh/fixed/day')
@@ -1037,4 +1466,4 @@ if __name__ == '__main__':
     start_background_refresh()
     
     # Ejecutar la aplicación
-    app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)
+    app.run(host='0.0.0.0', port=5050, debug=True, threaded=True)

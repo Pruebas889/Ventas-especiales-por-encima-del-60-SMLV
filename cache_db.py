@@ -24,6 +24,8 @@ def init_db():
                 IDComercial TEXT,
                 NumeroFactura TEXT,
                 NumeroDocumentoCliente TEXT,
+                Apellidos TEXT,
+                Nombres TEXT,
                 Refe TEXT,
                 NombreProducto TEXT,
                 CantidadUnidades REAL,
@@ -36,6 +38,7 @@ def init_db():
                 NombreFactura TEXT
             )
             ''')
+            
             cur.execute('''
             CREATE TABLE IF NOT EXISTS metadata (
                 key TEXT PRIMARY KEY,
