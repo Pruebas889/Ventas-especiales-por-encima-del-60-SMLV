@@ -47,8 +47,8 @@ for ($dia = 1; $dia -le 28; $dia++) {
 }
 
 # Mes: Marzo 2026 (hasta el 16 de marzo - corte FIXED)
-Write-Host "`n--- MARZO 2026 (HASTA DIA 16 - CORTE FIXED) ---" -ForegroundColor Magenta
-for ($dia = 1; $dia -le 16; $dia++) {
+Write-Host "`n--- MARZO 2026 (HASTA DIA 20 - CORTE FIXED) ---" -ForegroundColor Magenta
+for ($dia = 1; $dia -le 20; $dia++) {
     $fecha = "2026-03-{0:D2}" -f $dia
     Write-Host "Cargando $fecha..." -NoNewline
     $response = Invoke-WebRequest -Uri "http://localhost:5050/api/cache/refresh/fixed/day?date=$fecha" -UseBasicParsing

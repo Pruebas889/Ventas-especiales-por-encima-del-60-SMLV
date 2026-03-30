@@ -869,10 +869,25 @@ function renderTable(rows, totalCount) {
     
     const html = rows.map(r => {
         let cantidad = '';
-        if (r.CantidadUnidades) {
-            cantidad = r.CantidadUnidades.toString();
-            if (r.CantidadFracciones && r.CantidadFracciones !== '0') {
-                cantidad += ',' + r.CantidadFracciones;
+        const cantidadUnidadesRaw = (r.CantidadUnidades !== undefined && r.CantidadUnidades !== null) ? r.CantidadUnidades : '0';
+        const cantidadFraccionesRaw = (r.CantidadFracciones !== undefined && r.CantidadFracciones !== null) ? r.CantidadFracciones : '0';
+
+        const cantidadUnidadesNum = Number(cantidadUnidadesRaw);
+        const cantidadFraccionesNum = Number(cantidadFraccionesRaw);
+
+        if (!Number.isNaN(cantidadUnidadesNum) && !Number.isNaN(cantidadFraccionesNum)) {
+            if (cantidadUnidadesNum === 0) {
+                cantidad = `0,${cantidadFraccionesNum}`;
+            } else {
+                cantidad = `${cantidadUnidadesNum}`;
+                if (cantidadFraccionesNum !== 0) {
+                    cantidad += `,${cantidadFraccionesNum}`;
+                }
+            }
+        } else {
+            cantidad = `${cantidadUnidadesRaw}`;
+            if (cantidadFraccionesRaw !== '' && cantidadFraccionesRaw !== '0') {
+                cantidad += `,${cantidadFraccionesRaw}`;
             }
         }
         

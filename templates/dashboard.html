@@ -138,15 +138,22 @@
       </div>
       <div class="flex items-center gap-3">
         <div class="filter-pill">
+          <i class="fas fa-search filter-icon" aria-hidden="true"></i>
+          <input type="text" id="global-search" class="date-range-picker" placeholder="Buscar documento, PDV o tipo" autocomplete="off">
+        </div>
+        <div class="filter-pill">
           <i class="fas fa-calendar-alt filter-icon" aria-hidden="true"></i>
           <input type="text" id="date-range-picker" class="date-range-picker" placeholder="Seleccionar fechas" autocomplete="off">
           <span id="date-info-badge" class="date-info-badge" style="display: none;">📅</span>
         </div>
         <select id="idcomercial-filter" class="px-3 py-2 border rounded-md">
-          <option value="">PDV </option>
+          <option value="">PDV</option>
+        </select>
+        <select id="cliente-filter" class="px-3 py-2 border rounded-md" onfocus="populateClienteFilter()">
+          <option value="">Documento del Cliente</option>
         </select>
           <select id="tipo-filter" class="px-3 py-2 border rounded-md" onfocus="populateTipoFilter()">
-            <option value="">Tipo de Venta </option>
+            <option value="">Tipo de Venta</option>
           </select>
         <button id="refresh-btn" class="bg-green-600 text-white px-4 py-2 rounded-md">Refrescar</button>
         <div class="ml-4 active-filters" id="active-filters"></div>
@@ -238,7 +245,9 @@
   let availableStartDate = '2026-01-01';
   let availableEndDate = '';
   let selectedPdv = '';
+  let selectedCliente = '';
   let selectedTipo = '';
+  let selectedSearch = '';
 
   // Charts instances
   let chartPdvCount = null;
@@ -256,8 +265,9 @@
       // load persisted filters (from index or previous dashboard session)
       loadFiltersFromStorage();
       populatePDVFilter();
+      populateClienteFilter();
       populateTipoFilter();
-      // apply current filters (dates, pdv) on the fetched rows
+      // apply current filters (dates, pdv, cliente, tipo) on the fetched rows
       applyFilters();
     }catch(e){
       console.error('fetchData error', e);
@@ -283,6 +293,10 @@
     // filter by PDV if selected
     if(selectedPdv){
       rows = rows.filter(r => ((String(r.IDComercial||'').trim() || '(sin PDV)') === selectedPdv));
+    }
+    // filter by Cliente if selected
+    if(selectedCliente){
+      rows = rows.filter(r => ((String(r.NumeroDocumentoCliente||'').trim() || '(sin Cliente)') === selectedCliente));
     }
     // filter by Tipo de Venta if selected
     if (selectedTipo) {
@@ -332,6 +346,7 @@
     if(selectedStartDate) chips.push(`<span class="filter-chip">Desde ${selectedStartDate}</span>`);
     if(selectedEndDate) chips.push(`<span class="filter-chip">Hasta ${selectedEndDate}</span>`);
     if(selectedPdv) chips.push(`<span class="filter-chip">PDV: ${selectedPdv}</span>`);
+    if(selectedCliente) chips.push(`<span class="filter-chip">Cliente: ${selectedCliente}</span>`);
     if(selectedTipo) chips.push(`<span class="filter-chip">Tipo: ${selectedTipo}</span>`);
     if(chips.length){
       chips.push(`<button onclick="clearAllFilters()" class="ml-2 px-3 py-1 rounded bg-white border text-sm">Limpiar</button>`);
@@ -343,12 +358,14 @@
     selectedStartDate = '';
     selectedEndDate = '';
     selectedPdv = '';
+    selectedCliente = '';
     selectedTipo = '';
     // if using the single date-range picker, clear it
     try{ if(typeof datePicker !== 'undefined' && datePicker && datePicker.clear) datePicker.clear(); }
     catch(e){}
     const sd = document.getElementById('date-range-picker'); if(sd) sd.value = '';
     const sel = document.getElementById('idcomercial-filter'); if(sel) sel.value = '';
+    const csel = document.getElementById('cliente-filter'); if(csel) csel.value = '';
     const tsel = document.getElementById('tipo-filter'); if(tsel) tsel.value = '';
     saveFiltersToStorage();
     applyFilters();
@@ -539,16 +556,27 @@
   function populatePDVFilter(){
     const sel = document.getElementById('idcomercial-filter');
     if(!sel) return;
-    const pdvs = new Set();
-    for(const inv of invoicesMap.values()) pdvs.add(String(inv.idComercial||'').trim() || '(sin PDV)');
-    const arr = Array.from(pdvs).sort((a,b)=>a.localeCompare(b, undefined, {numeric:true}));
-    // populate using full dataset (allRows) to ensure all PDVs available
     const pdvSet = new Set();
     for(const r of (allRows||[])) pdvSet.add(String(r.IDComercial||'').trim() || '(sin PDV)');
     const pdvArr = Array.from(pdvSet).sort((a,b)=>a.localeCompare(b, undefined, {numeric:true}));
     sel.innerHTML = '<option value="">PDV </option>' + pdvArr.map(v=>`<option value="${v}">${v}</option>`).join('');
     sel.value = selectedPdv || '';
     sel.onchange = ()=>{ selectedPdv = sel.value || ''; saveFiltersToStorage(); applyFilters(); };
+  }
+
+  function populateClienteFilter(){
+    const sel = document.getElementById('cliente-filter');
+    if(!sel) return;
+    const clienteSet = new Set();
+    for(const r of (allRows||[])){
+      const doc = String(r.NumeroDocumentoCliente||'').trim();
+      if(!doc) continue;
+      clienteSet.add(doc);
+    }
+    const clienteArr = Array.from(clienteSet).sort((a,b)=>a.localeCompare(b, undefined, {numeric:false}));
+    sel.innerHTML = '<option value="">Documento del Cliente</option>' + clienteArr.map(doc=>`<option value="${doc}">${doc}</option>`).join('');
+    sel.value = selectedCliente || '';
+    sel.onchange = ()=>{ selectedCliente = sel.value || ''; saveFiltersToStorage(); applyFilters(); };
   }
 
   // Persistir / recuperar filtros en localStorage para sincronizar entre páginas
@@ -558,6 +586,7 @@
         startDate: selectedStartDate || '',
         endDate: selectedEndDate || '',
         pdv: selectedPdv || '',
+        cliente: selectedCliente || '',
         tipo: selectedTipo || ''
       };
       localStorage.setItem('veFilters', JSON.stringify(obj));
@@ -572,6 +601,7 @@
       selectedStartDate = obj.startDate || '';
       selectedEndDate = obj.endDate || '';
       selectedPdv = obj.pdv || '';
+      selectedCliente = obj.cliente || '';
       selectedTipo = obj.tipo || '';
     }catch(e){/* ignore */}
   }

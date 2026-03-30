@@ -1,6 +1,7 @@
 from flask import Flask, render_template, jsonify, g, request, send_file, abort
 import os
 import csv
+import sqlite3
 from datetime import datetime, timedelta, date, timezone
 from datetime import date, timezone
 import mysql.connector
@@ -19,7 +20,7 @@ logging.basicConfig(
 
 # Import cache helper (local SQLite cache)
 try:
-    from cache_db import refresh_fixed, refresh_recent, get_combined_rows, get_cache_info, init_db
+    from cache_db import refresh_fixed, refresh_recent, get_combined_rows, get_cache_info, init_db, FIXED_DB
 except Exception as e:
     logging.warning(f"Error importando cache_db: {e}")
     refresh_fixed = None
@@ -27,6 +28,7 @@ except Exception as e:
     get_combined_rows = None
     get_cache_info = None
     init_db = None
+    FIXED_DB = None
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 
@@ -375,20 +377,53 @@ def get_date_range_for_fixed():
     
     return start_date, cutoff
 
+
+def get_fixed_loaded_dates():
+    """Retorna un set de dates ya cargadas en cache_fixed.db"""
+    loaded = set()
+    if not FIXED_DB:
+        return loaded
+
+    db_path = os.path.join(os.path.dirname(__file__), FIXED_DB)
+    if not os.path.isfile(db_path):
+        return loaded
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT DISTINCT SUBSTR(Fecha,1,10) FROM ventas WHERE Fecha IS NOT NULL")
+        for row in cur.fetchall():
+            if row and row[0]:
+                try:
+                    loaded.add(datetime.strptime(row[0], '%Y-%m-%d').date())
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    return loaded
+
 def get_dates_to_load():
     """
-    Determina qué días faltan por cargar en Fixed
-    Por ahora, como no tenemos metadata de días, cargamos todos
+    Determina qué días faltan por cargar en Fixed.
+    Evita reprocesar días ya cargados en cache_fixed.
     """
     start_date, end_date = get_date_range_for_fixed()
     dates_to_load = []
     current_date = start_date
-    
+    loaded_dates = get_fixed_loaded_dates()
+
     while current_date <= end_date:
-        dates_to_load.append(current_date)
+        if current_date not in loaded_dates:
+            dates_to_load.append(current_date)
         current_date += timedelta(days=1)
-    
-    logging.info(f"Total de días a cargar: {len(dates_to_load)} (desde {start_date} hasta {end_date})")
+
+    logging.info(f"Total de días a cargar: {len(dates_to_load)} (desde {start_date} hasta {end_date}, ya cargados {len(loaded_dates)})")
     return dates_to_load
 
 def refresh_fixed_by_day(mysql_config, target_date=None, limit_per_day=500):
@@ -469,12 +504,13 @@ def background_refresh_task_daily():
             if refresh_recent is not None:
                 try:
                     logging.info("Ejecutando refresco RECENT")
-                    two_days_ago = (now - timedelta(days=2)).strftime('%Y-%m-%d')
+                    recent_days = 10
+                    from_date = (now - timedelta(days=recent_days)).strftime('%Y-%m-%d')
                     today_end = now.strftime('%Y-%m-%d 23:59:59')
                     
-                    recent_query = QUERY_BASE + f" AND f.FechaHora BETWEEN '{two_days_ago}' AND '{today_end}'"
+                    recent_query = QUERY_BASE + f" AND f.FechaHora BETWEEN '{from_date}' AND '{today_end}'"
                     
-                    refresh_recent(DB_CONFIG, recent_query, limit=2000)
+                    refresh_recent(DB_CONFIG, recent_query, limit=5000)
                     logging.info("✅ Refresco RECENT completado")
                     consecutive_errors = 0
                 except Exception as e:
@@ -1375,16 +1411,18 @@ def cache_days_status():
     try:
         start_date, end_date = get_date_range_for_fixed()
         total_days = (end_date - start_date).days + 1
-        
-        # Aquí podrías calcular días ya cargados si tuvieras metadata
-        # Por ahora, mostramos solo el rango total
-        
+        loaded_dates = sorted(list(get_fixed_loaded_dates()))
+        missing_days = total_days - len(loaded_dates)
+
         return jsonify({
             'start_date': start_date.isoformat(),
             'end_date': end_date.isoformat(),
             'total_days': total_days,
-            'estimated_time_minutes': total_days * 0.1,  # ~6 segundos por día
-            'note': 'Usa /api/cache/refresh/fixed/all-days para cargar todos'
+            'loaded_days': len(loaded_dates),
+            'missing_days': missing_days,
+            'loaded_date_examples': [d.isoformat() for d in loaded_dates[:5]],
+            'estimated_time_minutes': missing_days * 0.1,
+            'note': 'Usa /api/cache/refresh/fixed/all-days para completar datos históricos faltantes, y /api/cache/refresh/fixed/day?date=YYYY-MM-DD para fechas puntuales'
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
