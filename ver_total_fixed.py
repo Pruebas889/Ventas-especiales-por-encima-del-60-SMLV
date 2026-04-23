@@ -1,7 +1,7 @@
 import sqlite3
 
 # Conectar a la base FIXED
-conn = sqlite3.connect('cache_fixed.db')
+conn = sqlite3.connect('cache_recent.db')
 cursor = conn.cursor()
 
 # Contar total de registros

@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ventas Especiales · Copservir</title>
@@ -530,9 +531,9 @@ tbody tr:hover {
     </h2>
     <ul>
         <li class="active"><i class="fas fa-file-alt"></i> Reportes</li>
-        <li><a class="nav-link" href="/dashboard"><i class="fas fa-chart-pie"></i> Dashboard</a></li>
-        <li><i class="fas fa-users"></i> Clientes</li>
-        <li><i class="fas fa-store"></i> Puntos de Venta</li>
+        <li><a class="nav-link" href="/dashboard"><i class="fas fa-store"></i> PDV Dashboard</a></li>
+    <li><a class="nav-link" href="/clientes"><i class="fas fa-users"></i> Clientes</a></li>
+        <!-- <li><i class="fas fa-store"></i> Puntos de Venta</li> -->
     </ul>
 </div>
 
@@ -834,7 +835,7 @@ function applyFilter() {
             (r.NumeroFactura || '').toString().toLowerCase().includes(q) ||
             (r.NumeroDocumentoCliente || '').toString().toLowerCase().includes(q) ||
             (r.NombreProducto || '').toString().toLowerCase().includes(q) ||
-            (r.Refe || '').toString().toLowerCase().includes(q)
+            (r.Refe || '').toString().toLowerCase().includes(q) 
         );
     }
 
@@ -869,10 +870,25 @@ function renderTable(rows, totalCount) {
     
     const html = rows.map(r => {
         let cantidad = '';
-        if (r.CantidadUnidades) {
-            cantidad = r.CantidadUnidades.toString();
-            if (r.CantidadFracciones && r.CantidadFracciones !== '0') {
-                cantidad += ',' + r.CantidadFracciones;
+        const cantidadUnidadesRaw = (r.CantidadUnidades !== undefined && r.CantidadUnidades !== null) ? r.CantidadUnidades : '0';
+        const cantidadFraccionesRaw = (r.CantidadFracciones !== undefined && r.CantidadFracciones !== null) ? r.CantidadFracciones : '0';
+
+        const cantidadUnidadesNum = Number(cantidadUnidadesRaw);
+        const cantidadFraccionesNum = Number(cantidadFraccionesRaw);
+
+        if (!Number.isNaN(cantidadUnidadesNum) && !Number.isNaN(cantidadFraccionesNum)) {
+            if (cantidadUnidadesNum === 0) {
+                cantidad = `0,${cantidadFraccionesNum}`;
+            } else {
+                cantidad = `${cantidadUnidadesNum}`;
+                if (cantidadFraccionesNum !== 0) {
+                    cantidad += `,${cantidadFraccionesNum}`;
+                }
+            }
+        } else {
+            cantidad = `${cantidadUnidadesRaw}`;
+            if (cantidadFraccionesRaw !== '' && cantidadFraccionesRaw !== '0') {
+                cantidad += `,${cantidadFraccionesRaw}`;
             }
         }
         

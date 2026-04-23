@@ -24,6 +24,8 @@ def init_db():
                 IDComercial TEXT,
                 NumeroFactura TEXT,
                 NumeroDocumentoCliente TEXT,
+                Apellidos TEXT,
+                Nombres TEXT,
                 Refe TEXT,
                 NombreProducto TEXT,
                 CantidadUnidades REAL,
@@ -36,6 +38,7 @@ def init_db():
                 NombreFactura TEXT
             )
             ''')
+            
             cur.execute('''
             CREATE TABLE IF NOT EXISTS metadata (
                 key TEXT PRIMARY KEY,
@@ -240,7 +243,6 @@ def refresh_recent(mysql_config, base_query, limit=None, start_iso=None, end_iso
 def get_combined_rows(start=None, end=None, limit=None):
     """Devuelve filas combinadas de recent (preferido) y fixed."""
     init_db()
-    rows_map = {}
     def _read_db(dbname):
         p = _db_path(dbname)
         conn = sqlite3.connect(str(p))
@@ -250,36 +252,53 @@ def get_combined_rows(start=None, end=None, limit=None):
             q = 'SELECT * FROM ventas'
             params = []
             if start and end:
+                # Si son fechas sin hora (YYYY-MM-DD), añadir hora inicio y fin
+                start_param = start if 'T' in start or ' ' in start else start + ' 00:00:00'
+                end_param = end if 'T' in end or ' ' in end else end + ' 23:59:59'
                 q += ' WHERE Fecha BETWEEN ? AND ?'
-                params.extend([start, end])
+                params.extend([start_param, end_param])
             elif start:
+                start_param = start if 'T' in start or ' ' in start else start + ' 00:00:00'
                 q += ' WHERE Fecha >= ?'
-                params.append(start)
+                params.append(start_param)
             elif end:
+                end_param = end if 'T' in end or ' ' in end else end + ' 23:59:59'
                 q += ' WHERE Fecha <= ?'
-                params.append(end)
+                params.append(end_param)
             q += ' ORDER BY Fecha ASC'
             cur.execute(q, params)
             return [dict(r) for r in cur.fetchall()]
         finally:
             conn.close()
 
+    def _row_key(r):
+        return (
+            str(r.get('NumeroFactura') or '').strip(),
+            str(r.get('Refe') or '').strip(),
+            str(r.get('CantidadUnidades') or '').strip(),
+            str(r.get('CantidadFracciones') or '').strip(),
+            str(r.get('ValorTotal') or '').strip()
+        )
+
+    combined = []
+    seen_keys = set()
+
+    # Agregar filas recientes primero (tienen prioridad si hay solapamiento)
     recent_rows = _read_db(RECENT_DB)
     for r in recent_rows:
-        nf = str(r.get('NumeroFactura') or '').strip()
-        if nf:
-            rows_map[nf] = r
+        k = _row_key(r)
+        if k in seen_keys:
+            continue
+        seen_keys.add(k)
+        combined.append(r)
 
     fixed_rows = _read_db(FIXED_DB)
     for r in fixed_rows:
-        nf = str(r.get('NumeroFactura') or '').strip()
-        if not nf:
+        k = _row_key(r)
+        if k in seen_keys:
             continue
-        if nf in rows_map:
-            continue
-        rows_map[nf] = r
-
-    combined = list(rows_map.values())
+        seen_keys.add(k)
+        combined.append(r)
     try:
         combined.sort(key=lambda x: x.get('Fecha') or '')
     except Exception:

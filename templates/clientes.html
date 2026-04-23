@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clientes · Ventas Especiales</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Inter', sans-serif;
+}
+
+body {
+    background: linear-gradient(145deg, #f8fffb 0%, #e2f3e9 100%);
+    display: flex;
+}
+
+/* SIDEBAR */
+.sidebar {
+    width: 260px;
+    background: #ffffff;
+    height: 100vh;
+    padding: 32px 20px;
+    border-right: 1px solid rgba(0, 40, 20, 0.08);
+    box-shadow: 4px 0 20px rgba(0, 40, 20, 0.03);
+    position: sticky;
+    top: 0;
+}
+
+.sidebar h2 {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 48px;
+}
+
+.sidebar h2 img {
+    max-height: 130px;
+    width: auto;
+    object-fit: contain;
+}
+
+.sidebar ul {
+    list-style: none;
+}
+
+.sidebar ul li {
+    padding: 14px 18px;
+    margin-bottom: 6px;
+    border-radius: 14px;
+    cursor: pointer;
+    color: #2c4a3e;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    transition: all 0.2s ease;
+}
+
+.sidebar ul li i {
+    width: 24px;
+    font-size: 1.25rem;
+    color: #5e8b7c;
+}
+
+.sidebar ul li.active,
+.sidebar ul li:hover {
+    background: #e2f3e9;
+    color: #0b614b;
+    transform: scale(1.02);
+    box-shadow: 0 6px 12px rgba(0, 60, 30, 0.08);
+}
+
+.sidebar ul li.active i,
+.sidebar ul li:hover i {
+    color: #0b7b5a;
+}
+
+.sidebar ul li a.nav-link {
+    color: inherit;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+}
+
+/* MAIN */
+.main {
+    flex: 1;
+    padding: 28px 32px;
+    overflow-x: auto;
+}
+
+/* TOPBAR */
+.topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+}
+
+.filters-left {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.filter-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: white;
+    padding: 8px 16px;
+    border-radius: 48px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    transition: all 0.2s;
+}
+
+.filter-pill:hover {
+    border-color: #10b981;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.1);
+}
+
+.filter-icon {
+    color: #6b7280;
+    font-size: 0.9rem;
+}
+
+.filter-select {
+    border: none;
+    background: transparent;
+    font-size: 0.85rem;
+    padding: 4px 0;
+    min-width: 130px;
+    outline: none;
+    cursor: pointer;
+    color: #1f4034;
+    font-weight: 500;
+}
+
+.date-range-picker {
+    border: none;
+    background: transparent;
+    font-size: 0.85rem;
+    padding: 4px 0;
+    cursor: pointer;
+    outline: none;
+    min-width: 180px;
+    font-weight: 500;
+    color: #1f4034;
+}
+
+.date-info-badge {
+    background: #f0fdf4;
+    color: #065f46;
+    font-size: 0.7rem;
+    padding: 4px 10px;
+    border-radius: 40px;
+    white-space: nowrap;
+    margin-left: 6px;
+}
+
+.search-wrapper {
+    position: relative;
+    flex: 1;
+    min-width: 240px;
+}
+
+.search-wrapper i {
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #9ca3af;
+    font-size: 0.85rem;
+}
+
+.search {
+    width: 100%;
+    padding: 10px 16px 10px 42px;
+    border-radius: 48px;
+    border: 1px solid #e2e8f0;
+    background: white;
+    font-size: 0.85rem;
+    outline: none;
+}
+
+.search:focus {
+    border-color: #10b981;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+}
+
+.export-btn {
+    background: linear-gradient(135deg, #10b981 0%, #0d6b4a 100%);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 48px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s;
+}
+
+.export-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(16, 185, 129, 0.3);
+}
+
+.clear-btn {
+    background: white;
+    border: 1px solid #d1fae5;
+    color: #065f46;
+    padding: 6px 14px;
+    border-radius: 40px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.clear-btn:hover {
+    background: #fef2e8;
+    border-color: #f97316;
+    color: #f97316;
+}
+
+/* BANNER */
+.banner {
+    background: linear-gradient(112deg, #e6edea 0%, #0d6b4a 100%);
+    border-radius: 28px;
+    padding: 28px 36px;
+    color: white;
+    margin-bottom: 28px;
+    position: relative;
+    overflow: hidden;
+}
+
+.banner::after {
+    content: "";
+    position: absolute;
+    bottom: -30px;
+    right: -30px;
+    width: 160px;
+    height: 160px;
+    background: url("https://res.cloudinary.com/dz7okl1ko/image/upload/v1752180853/5134606975890468276-removebg-preview_iskqsd.png") no-repeat center;
+    background-size: contain;
+    opacity: 0.08;
+    pointer-events: none;
+}
+
+.banner-header {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-bottom: 16px;
+}
+
+.banner-header img {
+    height: 55px;
+}
+
+.banner-header h1 {
+    font-size: 32px;
+    font-weight: 800;
+    margin-bottom: 4px;
+}
+
+.banner-header p {
+    font-size: 0.9rem;
+    opacity: 0.9;
+}
+
+.banner-date-range {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(8px);
+    padding: 8px 20px;
+    border-radius: 40px;
+    font-weight: 500;
+}
+
+/* CARDS */
+.cards {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+}
+
+.card {
+    background: white;
+    flex: 1 1 200px;
+    padding: 20px 24px;
+    border-radius: 24px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+    border: 1px solid #e6f3ea;
+}
+
+.card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 24px rgba(16, 185, 129, 0.12);
+    border-color: #10b981;
+}
+
+.card h3 {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #6b8f7e;
+    margin-bottom: 4px;
+}
+
+.card h2 {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: #173b2d;
+}
+
+.card .trend {
+    font-size: 0.7rem;
+    font-weight: 500;
+    background: #e8f5ef;
+    padding: 4px 10px;
+    border-radius: 40px;
+    color: #0b714c;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 12px;
+}
+
+/* TABLA */
+.table-container {
+    background: white;
+    border-radius: 24px;
+    padding: 0;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th {
+    text-align: left;
+    padding: 16px 14px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #5c7c6b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 2px solid #e8f3ed;
+    background: #fafefc;
+}
+
+td {
+    padding: 14px;
+    font-size: 0.85rem;
+    color: #1f4034;
+    border-bottom: 1px solid #f0f7f2;
+}
+
+tbody tr:hover {
+    background: #fafefc;
+}
+
+/* Responsive */
+@media (max-width: 1000px) {
+    .sidebar { display: none; }
+    body { display: block; }
+    .main { padding: 16px; }
+    .topbar { flex-direction: column; align-items: stretch; }
+    .filters-left { flex-wrap: wrap; }
+    .search-wrapper { width: 100%; }
+    .export-btn { align-self: flex-end; }
+    .banner-header { flex-direction: column; text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+    <h2><img src="https://res.cloudinary.com/dz7okl1ko/image/upload/v1752180853/5134606975890468276-removebg-preview_iskqsd.png" alt="Copservir"></h2>
+    <ul>
+        <li><a class="nav-link" href="/"><i class="fas fa-file-alt"></i> Reportes</a></li>
+        <li><a class="nav-link" href="/dashboard"><i class="fas fa-store"></i> PDV Dashboard</a></li>
+        <li class="active"><a class="nav-link" href="/clientes"><i class="fas fa-users"></i> Clientes</a></li>
+        <!-- <li><i class="fas fa-store"></i> Puntos de Venta</li> -->
+    </ul>
+</div>
+
+<!-- MAIN CONTENT -->
+<div class="main">
+
+    <div class="topbar">
+        <div class="filters-left">
+            <div class="filter-pill">
+                <i class="fas fa-user filter-icon"></i>
+                <select id="cliente-select" class="filter-select">
+                    <option value="">Filtrar Clientes</option>
+                </select>
+            </div>
+            <div class="filter-pill">
+                <i class="fas fa-tags filter-icon"></i>
+                <select id="tipo-select" class="filter-select">
+                    <option value="">Tipo de Venta</option>
+                </select>
+            </div>
+            <div class="filter-pill">
+                <i class="fas fa-calendar-alt filter-icon"></i>
+                <input type="text" id="date-range-picker" class="date-range-picker" placeholder="Seleccionar fechas" autocomplete="off">
+                <span id="date-info-badge" class="date-info-badge" style="display: none;">📅</span>
+            </div>
+        </div>
+
+        <div class="search-wrapper">
+            <i class="fas fa-search"></i>
+            <input id="search" type="text" class="search" placeholder="Buscar por documento, nombre...">
+        </div>
+
+        <button id="export-xlsx-btn" class="export-btn">
+            <i class="fas fa-file-excel"></i> Exportar Excel
+        </button>
+    </div>
+
+    <div class="banner">
+        <div class="banner-header">
+            <img src="https://res.cloudinary.com/dz7okl1ko/image/upload/v1752180853/5134606975890468276-removebg-preview_iskqsd.png" alt="Copservir">
+            <div>
+                <h1>Clientes</h1>
+                <p>Listado agregado por cliente</p>
+            </div>
+        </div>
+        <div class="banner-date-range" id="banner-date-range">
+            <i class="fas fa-calendar-week"></i> Mostrando todos los datos
+        </div>
+    </div>
+
+    <div class="cards">
+        <div class="card">
+            <h3>Total Ventas</h3>
+            <h2 id="total-ventas">$ 0</h2>
+            <span class="trend">Total facturado a clientes</span>
+        </div>
+        <div class="card">
+            <h3>Cantidad de Facturas</h3>
+            <h2 id="cantidad-facturas">0</h2>
+            <span class="trend"><i class="fas fa-calendar"></i> Total de facturas en ventas especiales</span>
+        </div>
+        <div class="card">
+            <h3>Total Clientes</h3>
+            <h2 id="clientes-count">0</h2>
+            <span class="trend">Clientes únicos</span>
+        </div>
+        <div class="card">
+            <h3>Clientes Frecuentes</h3>
+            <h2 id="clientes-frecuentes">0</h2>
+            <span class="trend">Más de 1 compra</span>
+        </div>
+    </div>
+
+    <div id="active-filters" class="active-filters" style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;"></div>
+
+    <div class="table-container">
+        <table id="clientes-table">
+            <thead>
+                <tr>
+                    <th>Documento</th>
+                    <th>Nombres</th>
+                    <th>Apellidos</th>
+                    <th>Cantidad Facturas</th>
+                    <th>Total Facturado</th>
+                </tr>
+            </thead>
+            <tbody id="clientes-tbody">
+                <tr><td colspan="5" style="text-align:center; padding:40px;">Cargando datos...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+<script>
+// ============================================================
+// CONFIGURACIÓN
+// ============================================================
+let selectedCliente = '';
+let selectedTipo = '';
+let selectedStartDate = '';
+let selectedEndDate = '';
+let availableStartDate = '2026-01-01';
+let availableEndDate = '';
+let searchQuery = '';
+let currentData = null;
+let filterTimeout = null;
+let datePicker = null;
+
+// ============================================================
+// FUNCIONES AUXILIARES
+// ============================================================
+function fmtMoney(v) {
+    if (v === null || v === undefined || v === '') return '$ 0';
+    const n = Number(v);
+    if (isNaN(n)) return v;
+    return n.toLocaleString('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+}
+
+// ============================================================
+// OBTENER RANGO DE FECHAS DISPONIBLE
+// ============================================================
+async function getAvailableDateRange() {
+    try {
+        const res = await fetch('/api/cache/date-range');
+        if (res.ok) {
+            const data = await res.json();
+            availableStartDate = data.start_date || '2026-01-01';
+            availableEndDate = data.end_date;
+            const badge = document.getElementById('date-info-badge');
+            if (badge && availableEndDate) {
+                badge.style.display = 'inline-block';
+                badge.innerHTML = `📅 hasta ${availableEndDate}`;
+            }
+        }
+    } catch(e) {
+        console.error('Error obteniendo rango de fechas:', e);
+    }
+}
+
+// ============================================================
+// CALENDARIO
+// ============================================================
+function initDatePicker() {
+    datePicker = flatpickr("#date-range-picker", {
+        mode: "range",
+        locale: "es",
+        dateFormat: "Y-m-d",
+        placeholder: "Seleccionar fechas",
+        maxDate: availableEndDate || new Date(),
+        minDate: availableStartDate,
+        onChange: function(selectedDates) {
+            if (selectedDates.length === 2) {
+                selectedStartDate = selectedDates[0].toISOString().split('T')[0];
+                selectedEndDate = selectedDates[1].toISOString().split('T')[0];
+            } else if (selectedDates.length === 1) {
+                selectedStartDate = selectedDates[0].toISOString().split('T')[0];
+                selectedEndDate = selectedStartDate;
+            } else {
+                selectedStartDate = '';
+                selectedEndDate = '';
+            }
+            // Limpiar filtros de cliente y tipo cuando se cambia fecha, para ver todos los datos disponibles
+            selectedCliente = '';
+            selectedTipo = '';
+            const clienteSelect = document.getElementById('cliente-select');
+            if (clienteSelect) clienteSelect.value = '';
+            const tipoSelect = document.getElementById('tipo-select');
+            if (tipoSelect) tipoSelect.value = '';
+            updateBannerDateRange();
+            saveFiltersToStorage();
+            applyFilterFast();
+        }
+    });
+    
+    if (selectedStartDate && datePicker && typeof datePicker.setDate === 'function') {
+        try {
+            if (selectedEndDate) datePicker.setDate([selectedStartDate, selectedEndDate]);
+            else datePicker.setDate(selectedStartDate);
+        } catch (e) {}
+    }
+}
+
+function updateBannerDateRange() {
+    const bannerEl = document.getElementById('banner-date-range');
+    if (!bannerEl) return;
+    if (selectedStartDate && selectedEndDate && selectedStartDate === selectedEndDate) {
+        bannerEl.innerHTML = `<i class="fas fa-calendar-day"></i> ${selectedStartDate}`;
+    } else if (selectedStartDate && selectedEndDate) {
+        bannerEl.innerHTML = `<i class="fas fa-calendar-alt"></i> ${selectedStartDate} — ${selectedEndDate}`;
+    } else {
+        bannerEl.innerHTML = `<i class="fas fa-calendar-week"></i> Mostrando todos los datos`;
+    }
+}
+
+// ============================================================
+// FILTROS
+// ============================================================
+function applyFilterFast() {
+    if (filterTimeout) clearTimeout(filterTimeout);
+    filterTimeout = setTimeout(() => {
+        fetchClientsData();
+    }, 100);
+}
+
+function saveFiltersToStorage() {
+    try {
+        const obj = {
+            startDate: selectedStartDate || '',
+            endDate: selectedEndDate || '',
+            cliente: selectedCliente || '',
+            tipo: selectedTipo || ''
+        };
+        localStorage.setItem('veFilters', JSON.stringify(obj));
+    } catch(e) {}
+}
+
+function loadFiltersFromStorage() {
+    try {
+        const s = localStorage.getItem('veFilters');
+        if (!s) return;
+        const obj = JSON.parse(s);
+        selectedStartDate = obj.startDate || '';
+        selectedEndDate = obj.endDate || '';
+        // NO restaurar cliente y tipo automáticamente - solo fechas
+        // Esto evita que filtros antiguos bloqueen los datos cuando cambias fechas
+        selectedCliente = '';
+        selectedTipo = '';
+    } catch(e) {}
+}
+
+function renderActiveFilters() {
+    const el = document.getElementById('active-filters');
+    if (!el) return;
+    const chips = [];
+    if (selectedStartDate && selectedEndDate) {
+        chips.push(`<span class="filter-chip"><i class="fas fa-calendar"></i> ${selectedStartDate} — ${selectedEndDate}</span>`);
+    }
+    if (selectedCliente) chips.push(`<span class="filter-chip"><i class="fas fa-user"></i> ${selectedCliente}</span>`);
+    if (selectedTipo) chips.push(`<span class="filter-chip"><i class="fas fa-tags"></i> ${selectedTipo}</span>`);
+    if (searchQuery) chips.push(`<span class="filter-chip"><i class="fas fa-search"></i> ${searchQuery}</span>`);
+    if (chips.length) {
+        chips.push(`<button class="clear-btn" onclick="clearAllFilters()"><i class="fas fa-times"></i> Limpiar todo</button>`);
+    }
+    el.innerHTML = chips.join(' ');
+}
+
+function clearAllFilters() {
+    selectedStartDate = '';
+    selectedEndDate = '';
+    selectedCliente = '';
+    selectedTipo = '';
+    searchQuery = '';
+    
+    if (datePicker) datePicker.clear();
+    
+    const clienteSelect = document.getElementById('cliente-select');
+    if (clienteSelect) clienteSelect.value = '';
+    const tipoSelect = document.getElementById('tipo-select');
+    if (tipoSelect) tipoSelect.value = '';
+    const searchInput = document.getElementById('search');
+    if (searchInput) searchInput.value = '';
+    
+    updateBannerDateRange();
+    saveFiltersToStorage();
+    fetchClientsData();
+}
+
+// ============================================================
+// POBLAR SELECTORES
+// ============================================================
+async function populateFilters() {
+    try {
+        const params = new URLSearchParams();
+        if (selectedStartDate && selectedEndDate) {
+            if (selectedStartDate === selectedEndDate) {
+                params.append('start', selectedStartDate + ' 00:00:00');
+                params.append('end', selectedEndDate + ' 23:59:59');
+            } else {
+                params.append('start', selectedStartDate);
+                params.append('end', selectedEndDate + ' 23:59:59');
+            }
+        }
+        // Primero: obtener lista de clientes agregados para popular el selector de clientes
+        try {
+            const resClients = await fetch(`/api/clients/aggregated?${params.toString()}&limit=2000`);
+            if (resClients && resClients.ok) {
+                const dc = await resClients.json();
+                const clienteSelect = document.getElementById('cliente-select');
+                if (clienteSelect) {
+                    const arr = (dc.clients || []).map(c => ({
+                        v: c.documento || '',
+                        l: c.documento || ''
+                    }));
+                    clienteSelect.innerHTML = '<option value="">Filtrar Clientes</option>' + arr.map(x => `<option value="${x.v}">${escapeHtml(x.l)}</option>`).join('');
+                    if (selectedCliente) clienteSelect.value = selectedCliente;
+                    clienteSelect.onchange = () => {
+                        selectedCliente = clienteSelect.value || '';
+                        saveFiltersToStorage();
+                        applyFilterFast();
+                    };
+                }
+            }
+        } catch (e) {
+            // no bloqueante: si falla la carga de clientes, seguimos intentando con tipos
+            console.error('Error fetching clients for selector:', e);
+        }
+
+        // Luego: obtener tipos (como antes) para popular tipo-select
+        const res = await fetch(`/api/filters/options?${params.toString()}`);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const tipoSelect = document.getElementById('tipo-select');
+        tipoSelect.innerHTML = '<option value="">Tipo de Venta</option>' + 
+            data.tipos.map(v => `<option value="${v}">${v}</option>`).join('');
+        if (selectedTipo) tipoSelect.value = selectedTipo;
+        tipoSelect.onchange = () => { 
+            selectedTipo = tipoSelect.value || ''; 
+            saveFiltersToStorage(); 
+            applyFilterFast(); 
+        };
+        
+    } catch (e) {
+        console.error('Error populating filters:', e);
+    }
+}
+
+// ============================================================
+// OBTENER DATOS DE CLIENTES
+// ============================================================
+async function fetchClientsData() {
+    try {
+        const params = new URLSearchParams();
+        if (selectedStartDate && selectedEndDate) {
+            if (selectedStartDate === selectedEndDate) {
+                params.append('start', selectedStartDate + ' 00:00:00');
+                params.append('end', selectedEndDate + ' 23:59:59');
+            } else {
+                params.append('start', selectedStartDate);
+                params.append('end', selectedEndDate + ' 23:59:59');
+            }
+        }
+        // si hay un cliente seleccionado usamos su documento como search (tiene prioridad sobre la caja de búsqueda)
+        if (selectedCliente) {
+            params.append('search', selectedCliente);
+        } else if (searchQuery) {
+            params.append('search', searchQuery);
+        }
+        if (selectedTipo) params.append('tipo', selectedTipo);
+        params.append('limit', '2000');
+        
+        const res = await fetch(`/api/clients/aggregated?${params.toString()}`);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        
+        const data = await res.json();
+        currentData = data;
+        
+        if (data.success) {
+            renderTable(data.clients);
+            updateCards(data);
+            renderActiveFilters();
+        } else {
+            console.error('Error en respuesta:', data);
+            showError('Error al cargar datos');
+        }
+    } catch (e) {
+        console.error('Error fetching clients:', e);
+        showError(e.message);
+    }
+}
+
+// ============================================================
+// RENDER TABLA
+// ============================================================
+function renderTable(clients) {
+    const tbody = document.getElementById('clientes-tbody');
+    if (!tbody) return;
+    
+    if (!clients || clients.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px;">No hay registros con los filtros seleccionados.</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = clients.map(c => `
+        <tr>
+            <td><strong>${escapeHtml(c.documento)}</strong></td>
+            <td>${escapeHtml(c.nombres)}</td>
+            <td>${escapeHtml(c.apellidos)}</td>
+            <td><span style="background:#eefcf3; padding:4px 12px; border-radius:40px;">${c.facturas}</span></td>
+            <td>${fmtMoney(c.total)}</td>
+        </tr>
+    `).join('');
+}
+
+// ============================================================
+// ACTUALIZAR CARDS
+// ============================================================
+function updateCards(data) {
+    document.getElementById('total-ventas').innerText = fmtMoney(data.total_ventas || 0);
+    document.getElementById('cantidad-facturas').innerText = data.total_facturas || 0;
+    document.getElementById('clientes-count').innerText = data.total_clients || 0;
+    document.getElementById('clientes-frecuentes').innerText = data.clientes_frecuentes || 0;
+}
+
+// ============================================================
+// EXPORTAR EXCEL
+// ============================================================
+function exportToExcel() {
+    if (!currentData || !currentData.clients || currentData.clients.length === 0) {
+        alert('No hay datos para exportar');
+        return;
+    }
+    
+    const exportData = currentData.clients.map(c => ({
+        'Documento': c.documento,
+        'Nombres': c.nombres,
+        'Apellidos': c.apellidos,
+        'Cantidad Facturas': c.facturas,
+        'Total Facturado': c.total
+    }));
+    
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Clientes');
+    const now = new Date();
+    const filename = `clientes-${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2,'0')}-${now.getDate().toString().padStart(2,'0')}.xlsx`;
+    XLSX.writeFile(wb, filename);
+}
+
+// ============================================================
+// UTILIDADES
+// ============================================================
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/[&<>]/g, function(m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    });
+}
+
+function showError(message) {
+    const tbody = document.getElementById('clientes-tbody');
+    if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#991b1b; padding:40px;">Error: ${escapeHtml(message)}</td></tr>`;
+    }
+}
+
+// ============================================================
+// INICIALIZACIÓN
+// ============================================================
+document.addEventListener('DOMContentLoaded', async () => {
+    loadFiltersFromStorage();
+    await getAvailableDateRange();
+    initDatePicker();
+    
+    await populateFilters();
+    await fetchClientsData();
+    
+    setInterval(fetchClientsData, 60000);
+    
+    document.getElementById('export-xlsx-btn').addEventListener('click', exportToExcel);
+    document.getElementById('search').addEventListener('input', (e) => {
+        searchQuery = e.target.value;
+        saveFiltersToStorage();
+        applyFilterFast();
+    });
+});
+</script>
+</body>
+</html>

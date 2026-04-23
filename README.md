@@ -14,7 +14,7 @@ pip install -r requirements.txt
 python ventasespeciales.py
 ```
 
-La app servirá en http://localhost:5000. La API está en `/api/ventas` y acepta parámetros opcionales `start` y `end` (formato `YYYY-MM-DD` o `YYYY-MM-DD HH:MM:SS`).
+La app servirá en http://localhost:5050. La API está en `/api/ventas` y acepta parámetros opcionales `start` y `end` (formato `YYYY-MM-DD` o `YYYY-MM-DD HH:MM:SS`).
 
 Notas
 - El archivo `ventasespeciales.py` contiene la configuración `DB_CONFIG` con las credenciales/host proporcionadas. Si prefieres no almacenar credenciales en el código, usa variables de entorno o un archivo de configuración.
@@ -49,7 +49,7 @@ python create_db.py
 python ventasespeciales.py
 ```
 
-Abrir en el navegador: http://127.0.0.1:5000
+Abrir en el navegador: http://127.0.0.1:5050
 
 Notas:
 - La app usa `ventas.db` en el mismo directorio. El script `create_db.py` crea una tabla `ventas` y agrega filas de ejemplo.

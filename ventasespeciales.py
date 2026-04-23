@@ -1,6 +1,7 @@
 from flask import Flask, render_template, jsonify, g, request, send_file, abort
 import os
 import csv
+import sqlite3
 from datetime import datetime, timedelta, date, timezone
 from datetime import date, timezone
 import mysql.connector
@@ -19,7 +20,7 @@ logging.basicConfig(
 
 # Import cache helper (local SQLite cache)
 try:
-    from cache_db import refresh_fixed, refresh_recent, get_combined_rows, get_cache_info, init_db
+    from cache_db import refresh_fixed, refresh_recent, get_combined_rows, get_cache_info, init_db, FIXED_DB
 except Exception as e:
     logging.warning(f"Error importando cache_db: {e}")
     refresh_fixed = None
@@ -27,6 +28,7 @@ except Exception as e:
     get_combined_rows = None
     get_cache_info = None
     init_db = None
+    FIXED_DB = None
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 
@@ -133,19 +135,21 @@ def api_refresh_files_cache():
 
 # ========== FIN OPTIMIZACIÓN PDFs ==========
 
-# Query base (sin filtro de fecha)
+# Query base (sin filtro de fecha) - CON nombres y apellidos de clientes
 QUERY_BASE = """
 SELECT DISTINCT
     f.IDComercial, 
     f.NumeroFactura, 
     f.NumeroDocumentoCliente, 
+    c.Apellidos,
+    c.Nombres,
     d.Refe,
     p.NombreProducto,
     d.CantidadUnidades,
     d.CantidadFracciones,
     d.ValorDescuento,
     d.ValorTotal,
-    f.Total, 
+    f.Total,
     tv.Descripcion AS TipoVentaDescripcion, 
     f.FechaHora AS Fecha,
     CONCAT('Factura-', r.Prefijo, f.NumeroFactura, '.pdf') AS NombreFactura
@@ -154,6 +158,8 @@ INNER JOIN sii.pos_t_DetalleFactura AS d
     ON f.IDComercial = d.IDComercial 
    AND f.NumeroCaja = d.NumeroCaja 
    AND f.NumeroFactura = d.NumeroFactura
+LEFT JOIN sii.m_Cliente AS c
+    ON f.NumeroDocumentoCliente = c.NumeroDocumento
 LEFT JOIN sii.m_Producto AS p 
     ON d.Refe = p.Refe
 LEFT JOIN sii.pos_m_TipoVenta tv 
@@ -371,20 +377,53 @@ def get_date_range_for_fixed():
     
     return start_date, cutoff
 
+
+def get_fixed_loaded_dates():
+    """Retorna un set de dates ya cargadas en cache_fixed.db"""
+    loaded = set()
+    if not FIXED_DB:
+        return loaded
+
+    db_path = os.path.join(os.path.dirname(__file__), FIXED_DB)
+    if not os.path.isfile(db_path):
+        return loaded
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT DISTINCT SUBSTR(Fecha,1,10) FROM ventas WHERE Fecha IS NOT NULL")
+        for row in cur.fetchall():
+            if row and row[0]:
+                try:
+                    loaded.add(datetime.strptime(row[0], '%Y-%m-%d').date())
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    return loaded
+
 def get_dates_to_load():
     """
-    Determina qué días faltan por cargar en Fixed
-    Por ahora, como no tenemos metadata de días, cargamos todos
+    Determina qué días faltan por cargar en Fixed.
+    Evita reprocesar días ya cargados en cache_fixed.
     """
     start_date, end_date = get_date_range_for_fixed()
     dates_to_load = []
     current_date = start_date
-    
+    loaded_dates = get_fixed_loaded_dates()
+
     while current_date <= end_date:
-        dates_to_load.append(current_date)
+        if current_date not in loaded_dates:
+            dates_to_load.append(current_date)
         current_date += timedelta(days=1)
-    
-    logging.info(f"Total de días a cargar: {len(dates_to_load)} (desde {start_date} hasta {end_date})")
+
+    logging.info(f"Total de días a cargar: {len(dates_to_load)} (desde {start_date} hasta {end_date}, ya cargados {len(loaded_dates)})")
     return dates_to_load
 
 def refresh_fixed_by_day(mysql_config, target_date=None, limit_per_day=500):
@@ -465,12 +504,13 @@ def background_refresh_task_daily():
             if refresh_recent is not None:
                 try:
                     logging.info("Ejecutando refresco RECENT")
-                    two_days_ago = (now - timedelta(days=2)).strftime('%Y-%m-%d')
+                    recent_days = 10
+                    from_date = (now - timedelta(days=recent_days)).strftime('%Y-%m-%d')
                     today_end = now.strftime('%Y-%m-%d 23:59:59')
                     
-                    recent_query = QUERY_BASE + f" AND f.FechaHora BETWEEN '{two_days_ago}' AND '{today_end}'"
+                    recent_query = QUERY_BASE + f" AND f.FechaHora BETWEEN '{from_date}' AND '{today_end}'"
                     
-                    refresh_recent(DB_CONFIG, recent_query, limit=2000)
+                    refresh_recent(DB_CONFIG, recent_query, limit=5000)
                     logging.info("✅ Refresco RECENT completado")
                     consecutive_errors = 0
                 except Exception as e:
@@ -590,6 +630,11 @@ def index():
 @app.route('/dashboard')
 def dashboard():
     return render_template('dashboard.html')
+
+
+@app.route('/clientes')
+def clientes():
+    return render_template('clientes.html')
 
 def default_date_range_for_yesterday():
     # Rango completo del día anterior
@@ -712,6 +757,294 @@ def api_ventas():
         'rows': rows
     })
 
+
+@app.route('/api/cache/filtered')
+def api_cache_filtered():
+    """
+    Devuelve filas filtradas Y PAGINADAS desde el backend.
+    Parámetros:
+    - start, end: fechas
+    - pdv: filtrar por PDV
+    - cliente: filtrar por documento
+    - tipo: filtrar por tipo de venta
+    - search: búsqueda en múltiples campos
+    - page: página (1-indexed)
+    - per_page: registros por página (default 100)
+    """
+    if get_combined_rows is None:
+        return jsonify({'error': 'Cache no disponible'}), 404
+
+    start = request.args.get('start')
+    end = request.args.get('end')
+    pdv = request.args.get('pdv')
+    cliente = request.args.get('cliente')
+    tipo = request.args.get('tipo')
+    search = request.args.get('search', '').strip().lower()
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 100, type=int)
+
+    try:
+        rows = get_combined_rows(start=start, end=end)
+    except Exception as e:
+        app.logger.exception('Error leyendo cache: %s', e)
+        return jsonify({'error': str(e)}), 500
+
+    # Aplicar filtros en backend (más rápido que en JS)
+    filtered = rows
+    if pdv:
+        filtered = [r for r in filtered if str(r.get('IDComercial', '')) == pdv]
+    if cliente:
+        filtered = [r for r in filtered if str(r.get('NumeroDocumentoCliente', '')) == cliente]
+    if tipo:
+        filtered = [r for r in filtered if (r.get('TipoVentaDescripcion') or r.get('TipoVenta') or '') == tipo]
+    if search:
+        filtered = [r for r in filtered if
+                    search in str(r.get('IDComercial', '')).lower() or
+                    search in str(r.get('NumeroFactura', '')).lower() or
+                    search in str(r.get('NumeroDocumentoCliente', '')).lower() or
+                    search in str(r.get('NombreProducto', '')).lower() or
+                    search in str(r.get('Refe', '')).lower()]
+
+    # Calcular totales únicos (facturas únicas) para los KPIs
+    unique_totals = {}
+    seen = set()
+    for r in filtered:
+        nf = str(r.get('NumeroFactura', '')).strip()
+        if nf and nf not in seen:
+            seen.add(nf)
+            try:
+                unique_totals[nf] = float(r.get('Total', 0) or 0)
+            except:
+                pass
+
+    sum_total_unique = sum(unique_totals.values())
+    distinct_count = len(unique_totals)
+
+    # Clientes frecuentes
+    client_count = {}
+    for r in filtered:
+        doc = str(r.get('NumeroDocumentoCliente', '')).strip()
+        if doc:
+            client_count[doc] = client_count.get(doc, 0) + 1
+    clientes_frecuentes = sum(1 for c in client_count.values() if c > 1)
+
+    # PDV únicos
+    pdv_set = {str(r.get('IDComercial', '')) for r in filtered if r.get('IDComercial')}
+
+    # Paginación
+    total = len(filtered)
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    page_rows = filtered[start_idx:end_idx]
+
+    # Agregar pdf_exists a las filas de la página
+    try:
+        for r in page_rows:
+            nombre = r.get('NombreFactura') or ''
+            path = _find_best_file_match(nombre)
+            r['pdf_exists'] = bool(path and os.path.isfile(path))
+    except Exception as e:
+        app.logger.error(f"Error verificando PDFs: {e}")
+
+    return jsonify({
+        'rows': page_rows,
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+        'total_pages': (total + per_page - 1) // per_page,
+        'kpis': {
+            'total_ventas': sum_total_unique,
+            'total_facturas': distinct_count,
+            'clientes_frecuentes': clientes_frecuentes,
+            'pdv_count': len(pdv_set)
+        }
+    })
+    
+
+@app.route('/api/cache/filter-options')
+def api_cache_filter_options():
+    """Devuelve solo los valores únicos para PDV, Clientes y Tipos (sin procesar datos pesados)."""
+    if get_combined_rows is None:
+        return jsonify({'error': 'Cache no disponible'}), 404
+
+    start = request.args.get('start')
+    end = request.args.get('end')
+
+    try:
+        rows = get_combined_rows(start=start, end=end)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    pdvs = set()
+    clientes = set()
+    tipos = set()
+
+    for r in rows:
+        if r.get('IDComercial'):
+            pdvs.add(str(r.get('IDComercial')))
+        if r.get('NumeroDocumentoCliente'):
+            clientes.add(str(r.get('NumeroDocumentoCliente')))
+        tipo = (r.get('TipoVentaDescripcion') or r.get('TipoVenta') or '').strip()
+        if tipo:
+            tipos.add(tipo)
+
+    return jsonify({
+        'pdv': sorted(list(pdvs)),
+        'clientes': sorted(list(clientes)),
+        'tipos': sorted(list(tipos))
+    })
+
+@app.route('/api/clients/aggregated')
+def api_clients_aggregated():
+    """
+    Devuelve datos agregados por cliente (documento) con:
+    - Número de facturas únicas
+    - Total facturado
+    - Nombres y Apellidos del cliente
+    """
+    if get_combined_rows is None:
+        return jsonify({'error': 'Cache no disponible'}), 404
+
+    start = request.args.get('start')
+    end = request.args.get('end')
+    
+
+    # 🔥 SOLUCIÓN REAL: usar rango por día siguiente
+    try:
+        if start and end:
+            start_date = datetime.strptime(start[:10], '%Y-%m-%d')
+            end_date = datetime.strptime(end[:10], '%Y-%m-%d') + timedelta(days=1)
+
+            start = start_date.strftime('%Y-%m-%d')
+            end = end_date.strftime('%Y-%m-%d')
+    except Exception:
+        pass
+    pdv = request.args.get('pdv')
+    tipo = request.args.get('tipo')
+    search = request.args.get('search', '').strip().lower()
+    limit = request.args.get('limit', type=int, default=500)
+
+    try:
+        rows = get_combined_rows(start=start, end=end)
+    except Exception as e:
+        app.logger.exception('Error leyendo cache combinada: %s', e)
+        return jsonify({'error': str(e)}), 500
+
+    # Filtros
+    filtered_rows = []
+    for r in rows:
+        if pdv and str(r.get('IDComercial', '')) != pdv:
+            continue
+        if tipo:
+            tipo_val = (r.get('TipoVentaDescripcion') or r.get('TipoVenta') or '').strip()
+            if tipo_val != tipo:
+                continue
+        filtered_rows.append(r)
+
+    # Agregación por cliente
+    client_map = {}
+    facturas_unicas = set()
+
+    for r in filtered_rows:
+        num_doc = str(r.get('NumeroDocumentoCliente', '')).strip()
+        if not num_doc:
+            continue
+
+        nf = str(r.get('NumeroFactura', '')).strip()
+        total = float(r.get('Total', 0) or 0)
+
+        if nf:
+            facturas_unicas.add(nf)
+
+        if num_doc not in client_map:
+            client_map[num_doc] = {
+                'documento': num_doc,
+                'nombres': r.get('Nombres', '') or '',
+                'apellidos': r.get('Apellidos', '') or '',
+                'facturas': set(),
+                'total': 0
+            }
+
+        if nf:
+            client_map[num_doc]['facturas'].add(nf)
+        client_map[num_doc]['total'] += total
+
+    # Construir resultado
+    result = []
+    for doc, data in client_map.items():
+        nombre_completo = (f"{data['nombres']} {data['apellidos']}").strip()
+
+        if search:
+            if search not in doc.lower() and search not in nombre_completo.lower():
+                continue
+
+        result.append({
+            'documento': doc,
+            'nombres': data['nombres'],
+            'apellidos': data['apellidos'],
+            'nombre_completo': nombre_completo,
+            'facturas': len(data['facturas']),
+            'total': data['total']
+        })
+
+    result.sort(key=lambda x: x['total'], reverse=True)
+
+    if limit and limit > 0:
+        result = result[:limit]
+
+    total_ventas = sum(c['total'] for c in result)
+    clientes_frecuentes = sum(1 for c in result if c['facturas'] > 1)
+
+    return jsonify({
+        'success': True,
+        'clients': result,
+        'total_clients': len(result),
+        'total_ventas': total_ventas,
+        'total_facturas': len(facturas_unicas),
+        'clientes_frecuentes': clientes_frecuentes,
+        'filters_applied': {
+            'pdv': pdv,
+            'tipo': tipo,
+            'start': start,
+            'end': end,
+            'search': search
+        }
+    })
+    
+
+@app.route('/api/filters/options')
+def api_filters_options():
+    """
+    Devuelve los valores únicos de PDV y Tipo de Venta disponibles en los datos
+    """
+    if get_combined_rows is None:
+        return jsonify({'error': 'Cache no disponible'}), 404
+    
+    start = request.args.get('start')
+    end = request.args.get('end')
+    
+    try:
+        rows = get_combined_rows(start=start, end=end)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+    pdvs = set()
+    tipos = set()
+    
+    for r in rows:
+        pdv = r.get('IDComercial')
+        if pdv:
+            pdvs.add(str(pdv))
+        
+        tipo = (r.get('TipoVentaDescripcion') or r.get('TipoVenta') or '').strip()
+        if tipo:
+            tipos.add(tipo)
+    
+    return jsonify({
+        'pdv': sorted(list(pdvs), key=lambda x: str(x)),
+        'tipos': sorted(list(tipos))
+    })
+
 @app.route('/api/cache/info')
 def cache_info():
     """Endpoint para ver información del estado de la cache"""
@@ -829,6 +1162,45 @@ def api_cache_rows():
         for r in rows:
             r['pdf_exists'] = False
 
+    # Adjuntar NombreCliente (Nombres + Apellidos) mediante una sola consulta por lotes
+    try:
+        # obtener lista única de documentos presentes en las filas
+        docs = sorted({str(r.get('NumeroDocumentoCliente') or '').strip() for r in rows if r.get('NumeroDocumentoCliente')})
+        docs = [d for d in docs if d]
+        client_map = {}
+        if docs:
+            conn = get_mysql_conn()
+            cur = conn.cursor()
+            # ejecutar en chunks para evitar consultas muy largas
+            chunk_size = 500
+            for i in range(0, len(docs), chunk_size):
+                chunk = docs[i:i+chunk_size]
+                placeholders = ','.join(['%s'] * len(chunk))
+                q = f"SELECT NumeroDocumento, Nombres, Apellidos FROM sii.m_Cliente WHERE NumeroDocumento IN ({placeholders})"
+                cur.execute(q, tuple(chunk))
+                for num, nombres, apellidos in cur.fetchall():
+                    key = str(num).strip()
+                    fullname = ((nombres or '').strip() + ' ' + (apellidos or '').strip()).strip()
+                    client_map[key] = fullname
+            try:
+                cur.close()
+            except Exception:
+                pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+        # adjuntar al resultado (campo NombreCliente)
+        for r in rows:
+            num = r.get('NumeroDocumentoCliente')
+            key = str(num).strip() if num is not None else ''
+            r['NombreCliente'] = client_map.get(key, '')
+    except Exception as e:
+        app.logger.error(f"Error obteniendo nombres de clientes: {e}")
+        for r in rows:
+            r['NombreCliente'] = ''
+
     return jsonify({
         'count': len(rows),
         'distinct_facturas_count': distinct_count,
@@ -934,6 +1306,39 @@ def api_generate_missing_pdfs():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+@app.route('/api/clients')
+def api_clients():
+    """Devuelve los clientes (NumeroDocumento -> Nombre completo) desde la tabla sii.m_Cliente.
+    Esto permite al frontend mostrar Nombres y Apellidos concatenados por documento.
+    """
+    try:
+        conn = get_mysql_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT NumeroDocumento, Nombres, Apellidos FROM sii.m_Cliente")
+        rows = cur.fetchall()
+        clients = []
+        for r in rows:
+            numero = r[0]
+            nombres = (r[1] or '').strip() if len(r) > 1 else ''
+            apellidos = (r[2] or '').strip() if len(r) > 2 else ''
+            fullname = (nombres + ' ' + apellidos).strip()
+            clients.append({'NumeroDocumento': numero, 'NombreCompleto': fullname})
+        cur.close()
+        conn.close()
+        return jsonify({'clients': clients})
+    except Exception as e:
+        app.logger.exception('Error obteniendo lista de clientes: %s', e)
+        try:
+            cur.close()
+        except Exception:
+            pass
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return jsonify({'clients': []}), 500
+
+
 @app.route('/api/cache/refresh/fixed/weekly')
 def refresh_fixed_weekly():
     """Endpoint para cargar FIXED por semanas (evita timeouts)"""
@@ -1018,16 +1423,18 @@ def cache_days_status():
     try:
         start_date, end_date = get_date_range_for_fixed()
         total_days = (end_date - start_date).days + 1
-        
-        # Aquí podrías calcular días ya cargados si tuvieras metadata
-        # Por ahora, mostramos solo el rango total
-        
+        loaded_dates = sorted(list(get_fixed_loaded_dates()))
+        missing_days = total_days - len(loaded_dates)
+
         return jsonify({
             'start_date': start_date.isoformat(),
             'end_date': end_date.isoformat(),
             'total_days': total_days,
-            'estimated_time_minutes': total_days * 0.1,  # ~6 segundos por día
-            'note': 'Usa /api/cache/refresh/fixed/all-days para cargar todos'
+            'loaded_days': len(loaded_dates),
+            'missing_days': missing_days,
+            'loaded_date_examples': [d.isoformat() for d in loaded_dates[:5]],
+            'estimated_time_minutes': missing_days * 0.1,
+            'note': 'Usa /api/cache/refresh/fixed/all-days para completar datos históricos faltantes, y /api/cache/refresh/fixed/day?date=YYYY-MM-DD para fechas puntuales'
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
